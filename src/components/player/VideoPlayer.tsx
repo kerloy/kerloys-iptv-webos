@@ -23,6 +23,7 @@ import type {
 } from '../../types/iptv';
 import { useAppStore } from '../../store/useAppStore';
 import { TV_KEYS, isBackKey } from '../../utils/tvRemote';
+import { toPlayableStreamUrl } from '../../utils/network';
 import {
   getActiveCueText,
   parseSubtitleCues,
@@ -41,6 +42,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
   const hlsRef = useRef<Hls | null>(null);
   const mpegtsRef = useRef<mpegts.Player | null>(null);
   const osdTimeoutRef = useRef<number | null>(null);
+  const triedFallbackRef = useRef<boolean>(false);
 
   const {
     settings,
@@ -58,6 +60,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
   const [isBuffering, setIsBuffering] = useState(true);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [showOsd, setShowOsd] = useState(true);
+  const [activeStreamUrl, setActiveStreamUrl] = useState(media.streamUrl);
 
   // Audio, Video & Subtitle tracks
   const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
@@ -93,13 +96,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
       hlsRef.current = null;
     }
     if (mpegtsRef.current) {
-      mpegtsRef.current.destroy();
+      try {
+        mpegtsRef.current.unload();
+        mpegtsRef.current.detachMediaElement();
+        mpegtsRef.current.destroy();
+      } catch {
+        // Ignore cleanup errors
+      }
       mpegtsRef.current = null;
     }
   };
 
   const initPlayback = useCallback(
-    (streamUrlToLoad: string) => {
+    (rawStreamUrl: string, forceFormat?: 'm3u8' | 'ts' | 'native' | 'h264') => {
       const video = videoRef.current;
       if (!video) return;
 
@@ -107,23 +116,87 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
       setIsBuffering(true);
       setPlaybackError(null);
 
-      const lowerUrl = streamUrlToLoad.toLowerCase();
-      const isM3U8 =
-        lowerUrl.includes('.m3u8') || media.containerExtension === 'm3u8';
-      const isTS =
-        lowerUrl.endsWith('.ts') || media.containerExtension === 'ts';
+      // For Xtream Codes Live TV URLs (/live/user/pass/123.m3u8), prefer .ts directly
+      // since most Xtream servers return HTTP 405 on .m3u8 and serve raw MPEG-TS on .ts.
+      let effectiveRawUrl = rawStreamUrl;
+      if (
+        !forceFormat &&
+        media.type === 'live' &&
+        /\/live\/[^/]+\/[^/]+\/\d+\.m3u8$/i.test(rawStreamUrl)
+      ) {
+        effectiveRawUrl = rawStreamUrl.replace(/\.m3u8$/i, '.ts');
+      }
 
-      // 1. MPEG-TS Engine (Live raw .ts streams)
+      setActiveStreamUrl(effectiveRawUrl);
+
+      let playableUrl = toPlayableStreamUrl(effectiveRawUrl);
+      if (forceFormat === 'h264' && playableUrl.startsWith('/__proxy')) {
+        playableUrl += '&transcode=h264';
+      } else if (forceFormat === 'native' && playableUrl.startsWith('/__proxy')) {
+        playableUrl += '&transcode=mp4';
+      }
+
+      const lowerRaw = effectiveRawUrl.toLowerCase();
+
+      // Only use mpegts.js for Live TV .ts streams (or explicit 'ts'/'h264' mode).
+      // VOD Movies & Series (.mp4, .mkv, .avi) use the native HTML5 <video> element
+      // (with automatic Fragmented-MP4 remuxing in /__proxy for .mkv/.avi).
+      const isTS =
+        forceFormat === 'ts' ||
+        forceFormat === 'h264' ||
+        (!forceFormat &&
+          media.type === 'live' &&
+          (lowerRaw.endsWith('.ts') ||
+            lowerRaw.includes('.ts?') ||
+            media.containerExtension === 'ts'));
+
+      const isM3U8 =
+        forceFormat === 'm3u8' ||
+        (!forceFormat &&
+          !isTS &&
+          (lowerRaw.includes('.m3u8') || media.containerExtension === 'm3u8'));
+
+      // 1. MPEG-TS Engine (Live raw .ts streams — very common on Xtream Codes!)
       if (isTS && mpegts.isSupported() && settings.playerEngine !== 'native') {
-        const player = mpegts.createPlayer({
-          type: 'mse',
-          isLive: true,
-          url: streamUrlToLoad,
-        });
+        const absolutePlayableUrl = playableUrl.startsWith('/')
+          ? `${window.location.origin}${playableUrl}`
+          : playableUrl;
+
+        const player = mpegts.createPlayer(
+          {
+            type: 'mpegts',
+            isLive: media.type === 'live',
+            url: absolutePlayableUrl,
+            cors: true,
+          },
+          {
+            enableWorker: true,
+            enableStashBuffer: true,
+            stashInitialSize: 384 * 1024,
+            autoCleanupSourceBuffer: true,
+            liveBufferLatencyChasing: false,
+          }
+        );
         mpegtsRef.current = player;
         player.attachMediaElement(video);
         player.load();
         Promise.resolve(player.play()).catch(() => {});
+
+        player.on(mpegts.Events.ERROR, (errType, errDetail, errInfo) => {
+          console.warn('[MPEG-TS Player Error]', errType, errDetail, errInfo);
+          if (video.readyState < 2) {
+            if (forceFormat !== 'h264' && playableUrl.startsWith('/__proxy')) {
+              initPlayback(effectiveRawUrl, 'h264');
+              return;
+            }
+            setPlaybackError(
+              `MPEG-TS Error (${errType}: ${errDetail}). ${
+                errInfo?.msg || 'Your stream may use HEVC/AC3 or require transcoding.'
+              }`
+            );
+            setIsBuffering(false);
+          }
+        });
 
         setAudioTracks([
           {
@@ -150,9 +223,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: media.type === 'live',
+          manifestLoadingTimeOut: 15000,
+          levelLoadingTimeOut: 15000,
         });
         hlsRef.current = hls;
-        hls.loadSource(streamUrlToLoad);
+        hls.loadSource(playableUrl);
         hls.attachMedia(video);
 
         hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
@@ -162,7 +237,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
           }
           video.play().catch(() => {});
 
-          // Populate Video Streams (Bitrate/Resolution levels)
           const vLevels: VideoTrackOption[] = [
             {
               id: 'hls-v-auto',
@@ -183,7 +257,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
           ];
           setVideoTracks(vLevels);
 
-          // Populate Audio Streams
           if (hls.audioTracks && hls.audioTracks.length > 0) {
             setAudioTracks(
               hls.audioTracks.map((at, idx) => ({
@@ -211,7 +284,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
             );
           }
 
-          // Populate Embedded Subtitle Tracks
           if (hls.subtitleTracks && hls.subtitleTracks.length > 0) {
             const embeddedSubs: SubtitleTrackOption[] = hls.subtitleTracks.map(
               (st, idx) => ({
@@ -263,14 +335,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
 
         hls.on(Hls.Events.ERROR, (_, errData) => {
           if (errData.fatal) {
-            if (
-              media.fallbackStreamUrl &&
-              streamUrlToLoad !== media.fallbackStreamUrl
-            ) {
-              initPlayback(media.fallbackStreamUrl);
+            // Many Xtream servers return raw MPEG-TS even on .m3u8 URLs or only support .ts
+            if (!triedFallbackRef.current) {
+              triedFallbackRef.current = true;
+              const tsCandidate =
+                media.fallbackStreamUrl ||
+                rawStreamUrl.replace(/\.m3u8(\?.*)?$/i, '.ts$1');
+              initPlayback(tsCandidate, 'ts');
             } else {
               setPlaybackError(
-                `Stream error (${errData.details}). Try switching decoder to webOS Native in Audio/Video Tracks.`
+                `Stream error (${errData.details}). Try switching to MPEG-TS (.ts) or Native Player below.`
               );
               setIsBuffering(false);
             }
@@ -280,8 +354,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
         return;
       }
 
-      // 3. Native webOS HTML5 Video Pipeline (MKV, MP4, AVI, or Native HLS)
-      video.src = streamUrlToLoad;
+      // 3. Native webOS / HTML5 Video Pipeline (MP4, MKV, AVI, or Native HLS)
+      video.src = playableUrl;
       video.load();
       video.onloadedmetadata = () => {
         setIsBuffering(false);
@@ -290,7 +364,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
         }
         video.play().catch(() => {});
 
-        // Inspect native HTML5 / webOS Luna audioTracks if available on TV
         const nativeAudio = (
           video as unknown as {
             audioTracks?: ArrayLike<{
@@ -346,16 +419,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
       };
 
       video.onerror = () => {
+        if (!triedFallbackRef.current && media.type === 'live') {
+          triedFallbackRef.current = true;
+          initPlayback(media.fallbackStreamUrl || rawStreamUrl, 'ts');
+          return;
+        }
         setIsBuffering(false);
-        setPlaybackError(
-          'Unable to decode stream. Verify playlist URL or switch stream format (.m3u8 / .ts).'
-        );
+        const ext = (media.containerExtension || '').toLowerCase();
+        if (ext === 'mkv' || ext === 'avi') {
+          setPlaybackError(
+            `Note: This VOD file uses a .${ext.toUpperCase()} container (often with AC3/DTS audio). Desktop Chrome blocks some AC3/MKV codecs that your LG webOS TV hardware decodes natively, or you can try switching Audio/Video tracks.`
+          );
+        } else {
+          setPlaybackError(
+            'Unable to decode stream. Try switching between MPEG-TS (.ts) and HLS (.m3u8) below.'
+          );
+        }
       };
     },
     [media, settings.playerEngine]
   );
 
   useEffect(() => {
+    triedFallbackRef.current = false;
     initPlayback(media.streamUrl);
     revealOsd();
     return () => {
@@ -390,7 +476,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
     }
   }, [activeSubtitleId, subtitleTracks]);
 
-  // Synchronize time, save watch progress, and compute active subtitle cue
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -407,7 +492,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
       setCurrentCueText(cueText);
     }
 
-    // Periodically save resume position for Movies & Series
     if (media.type !== 'live' && nowSec > 5 && Math.floor(nowSec) % 5 === 0) {
       updateWatchProgress({
         itemId: media.id,
@@ -426,7 +510,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
     }
   };
 
-  // Switch Audio Stream
   const handleSelectAudioTrack = (index: number) => {
     setActiveAudioIndex(index);
     if (hlsRef.current && hlsRef.current.audioTracks.length > index) {
@@ -445,7 +528,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
     );
   };
 
-  // Switch Video Quality / Stream
   const handleSelectVideoTrack = (index: number) => {
     setActiveVideoIndex(index);
     if (hlsRef.current) {
@@ -482,7 +564,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
     [media.type, revealOsd]
   );
 
-  // Live TV Channel Up / Down zapping
   const zapLiveChannel = useCallback(
     (direction: 1 | -1) => {
       if (media.type !== 'live' || liveChannels.length === 0) return;
@@ -505,7 +586,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
     [liveChannels, media.id, media.type, setActiveMedia]
   );
 
-  // LG webOS Remote & Keyboard handler inside player
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       revealOsd();
@@ -626,10 +706,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
         autoPlay
         muted={isMuted}
         onTimeUpdate={handleTimeUpdate}
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => {
+          setIsPlaying(true);
+          setIsBuffering(false);
+        }}
         onPause={() => setIsPlaying(false)}
         onWaiting={() => setIsBuffering(true)}
         onPlaying={() => setIsBuffering(false)}
+        onCanPlay={() => setIsBuffering(false)}
       />
 
       {/* Custom High-Contrast Subtitle Overlay */}
@@ -653,34 +737,55 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 pointer-events-none">
           <RefreshCw className="w-12 h-12 text-sky-400 animate-spin mb-3" />
           <span className="text-sm font-medium text-slate-200">
-            Loading stream on LG webOS Media Pipeline...
+            Connecting to stream via IPTV proxy...
           </span>
         </div>
       )}
 
       {/* Error Recovery Banner */}
       {playbackError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-8">
-          <div className="bg-[#0F1626] border border-red-500/40 rounded-2xl p-6 max-w-lg text-center space-y-4">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-8 z-50">
+          <div className="bg-[#0F1626] border border-red-500/40 rounded-2xl p-6 max-w-xl text-center space-y-4">
             <AlertTriangle className="w-12 h-12 text-red-400 mx-auto" />
-            <h3 className="text-lg font-bold text-white">Playback Error</h3>
+            <h3 className="text-lg font-bold text-white">Playback Recovery</h3>
             <p className="text-sm text-slate-300">{playbackError}</p>
-            <div className="flex justify-center space-x-3">
+            <div className="flex flex-wrap justify-center gap-2.5">
               <button
-                onClick={() => initPlayback(media.streamUrl)}
-                className="px-5 py-2.5 rounded-xl bg-sky-500 text-slate-950 font-bold text-sm"
+                onClick={() => {
+                  const tsUrl = activeStreamUrl.replace(/\.m3u8(\?.*)?$/i, '.ts$1');
+                  initPlayback(tsUrl, 'h264');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs"
               >
-                Retry Stream
+                Force H.264 + AAC Transcode
               </button>
               <button
-                onClick={() => setShowTrackModal(true)}
-                className="px-5 py-2.5 rounded-xl bg-slate-800 text-white font-semibold text-sm"
+                onClick={() => {
+                  const tsUrl = activeStreamUrl.replace(/\.m3u8(\?.*)?$/i, '.ts$1');
+                  initPlayback(tsUrl, 'ts');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-sky-500 text-slate-950 font-bold text-xs"
               >
-                Switch Decoder Engine
+                Try MPEG-TS (.ts) Engine
+              </button>
+              <button
+                onClick={() => {
+                  const m3u8Url = activeStreamUrl.replace(/\.ts(\?.*)?$/i, '.m3u8$1');
+                  initPlayback(m3u8Url, 'm3u8');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs"
+              >
+                Try HLS (.m3u8) Engine
+              </button>
+              <button
+                onClick={() => initPlayback(activeStreamUrl, 'native')}
+                className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+              >
+                Try Native HTML5 Video
               </button>
               <button
                 onClick={onClose}
-                className="px-5 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-sm"
+                className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs"
               >
                 Exit Player
               </button>

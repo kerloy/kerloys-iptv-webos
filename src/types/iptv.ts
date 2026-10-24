@@ -6,6 +6,7 @@ export interface PlaylistProfile {
   id: string;
   name: string;
   type: PlaylistSourceType;
+  isDefault?: boolean;
   createdAt: number;
   lastSyncedAt?: number;
   // Xtream Codes credentials
@@ -209,6 +210,8 @@ export interface AppSettings {
   parentalPin: string;
   parentalEnabled: boolean;
   unlockedSession: boolean;
+  showAdultInMainMenus: boolean;
+  customAdultCategoryIds: string[];
 }
 
 export interface PlayableMedia {

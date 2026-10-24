@@ -45,7 +45,9 @@ export function normalizeServerUrl(rawUrl: string): string {
 }
 
 export function isAdultCategoryName(name: string): boolean {
-  return /\b(adult|xxx|18\+|porn|erotic|nsfw|mature)\b/i.test(name);
+  return /\b(adults?|for\s*adults?|xxx|18\+|porn|erotic|nsfw|mature|sex|hentai|playboy|brazzers|dorcel|penthouse|hustler|babes)\b|18\+/i.test(
+    name
+  );
 }
 
 export class XtreamClient {

@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Upload,
   ShieldCheck,
+  Star,
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 
@@ -15,9 +16,11 @@ export const PlaylistsView: React.FC = () => {
   const {
     profiles,
     activeProfileId,
+    defaultProfileId,
     isLoadingPlaylist,
     playlistError,
     loadProfileCatalog,
+    setDefaultProfile,
     addXtreamProfile,
     addM3UProfile,
     removeProfile,
@@ -30,13 +33,15 @@ export const PlaylistsView: React.FC = () => {
   const [serverUrl, setServerUrl] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [liveFormat, setLiveFormat] = useState<'m3u8' | 'ts'>('m3u8');
+  const [liveFormat, setLiveFormat] = useState<'m3u8' | 'ts'>('ts');
+  const [makeDefaultXtream, setMakeDefaultXtream] = useState(true);
 
   // M3U form state
   const [m3uName, setM3uName] = useState('');
   const [m3uUrl, setM3uUrl] = useState('');
   const [epgUrl, setEpgUrl] = useState('');
   const [m3uRawText, setM3uRawText] = useState('');
+  const [makeDefaultM3u, setMakeDefaultM3u] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
@@ -52,12 +57,17 @@ export const PlaylistsView: React.FC = () => {
         username,
         password,
         preferredLiveFormat: liveFormat,
+        setAsDefault: makeDefaultXtream,
       });
       setXtreamName('');
       setServerUrl('');
       setUsername('');
       setPassword('');
-      setStatusBanner('Xtream Codes portal connected & synced!');
+      setStatusBanner(
+        makeDefaultXtream
+          ? 'Xtream Codes server connected & saved as your Default IPTV!'
+          : 'Xtream Codes server connected & synced!'
+      );
     } catch {
       // Error displayed via playlistError
     }
@@ -73,6 +83,7 @@ export const PlaylistsView: React.FC = () => {
         m3uUrl: m3uUrl.trim() || undefined,
         m3uContent: m3uRawText.trim() || undefined,
         epgUrl: epgUrl.trim() || undefined,
+        setAsDefault: makeDefaultM3u,
       });
       setM3uName('');
       setM3uUrl('');
@@ -103,10 +114,10 @@ export const PlaylistsView: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-white">
-                Active Playlist Profiles
+                IPTV Sources & Default Profile
               </h2>
               <p className="text-xs text-slate-400">
-                Switch between Xtream Codes portals, M3U playlists & Demo showcase
+                Your ★ Default IPTV loads automatically every time the app starts
               </p>
             </div>
             <button
@@ -117,17 +128,18 @@ export const PlaylistsView: React.FC = () => {
               <RefreshCw
                 className={`w-3.5 h-3.5 ${isLoadingPlaylist ? 'animate-spin' : ''}`}
               />
-              <span>Refresh</span>
+              <span>Sync Now</span>
             </button>
           </div>
 
           <div className="space-y-3">
             {profiles.map((prof) => {
               const isActive = prof.id === activeProfileId;
+              const isDefault = prof.id === defaultProfileId || Boolean(prof.isDefault);
               return (
                 <div
                   key={prof.id}
-                  className={`p-4 rounded-xl border transition-all ${
+                  className={`p-4 rounded-xl border transition-all space-y-3 ${
                     isActive
                       ? 'bg-sky-500/15 border-sky-400'
                       : 'bg-slate-900/80 border-slate-800'
@@ -138,10 +150,16 @@ export const PlaylistsView: React.FC = () => {
                       onClick={() => loadProfileCatalog(prof.id)}
                       className="text-left flex-1 focus:outline-none"
                     >
-                      <div className="flex items-center space-x-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 text-sky-300">
                           {prof.type}
                         </span>
+                        {isDefault && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-amber-500 text-slate-950 flex items-center space-x-1">
+                            <Star className="w-3 h-3 fill-slate-950" />
+                            <span>DEFAULT IPTV</span>
+                          </span>
+                        )}
                         <span className="font-bold text-white text-sm">
                           {prof.name}
                         </span>
@@ -179,6 +197,36 @@ export const PlaylistsView: React.FC = () => {
                         title="Remove Profile"
                       >
                         <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Action Footer: Set as Default IPTV / Switch */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                    {!isDefault ? (
+                      <button
+                        onClick={() => {
+                          setDefaultProfile(prof.id);
+                          setStatusBanner(`"${prof.name}" is now your Default IPTV source on startup!`);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 text-xs font-bold flex items-center space-x-1.5"
+                      >
+                        <Star className="w-3.5 h-3.5" />
+                        <span>Set as Default IPTV</span>
+                      </button>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-amber-400 flex items-center space-x-1">
+                        <Star className="w-3.5 h-3.5 fill-amber-400" />
+                        <span>Loads automatically on startup</span>
+                      </span>
+                    )}
+
+                    {!isActive && (
+                      <button
+                        onClick={() => loadProfileCatalog(prof.id)}
+                        className="px-3 py-1.5 rounded-lg bg-sky-500 text-slate-950 text-xs font-bold"
+                      >
+                        Activate Now
                       </button>
                     )}
                   </div>
@@ -241,7 +289,7 @@ export const PlaylistsView: React.FC = () => {
                   type="text"
                   value={xtreamName}
                   onChange={(e) => setXtreamName(e.target.value)}
-                  placeholder="e.g. Living Room 4K IPTV"
+                  placeholder="e.g. My Default Xtream IPTV"
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm"
                 />
               </div>
@@ -255,7 +303,7 @@ export const PlaylistsView: React.FC = () => {
                   required
                   value={serverUrl}
                   onChange={(e) => setServerUrl(e.target.value)}
-                  placeholder="http://line.example-iptv.com:8080"
+                  placeholder="http://star.jixtv.xyz"
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm"
                 />
               </div>
@@ -289,28 +337,42 @@ export const PlaylistsView: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase text-slate-400 mb-1">
-                  Preferred Live TV Stream Container
-                </label>
-                <div className="flex space-x-3">
-                  {(['m3u8', 'ts'] as const).map((fmt) => (
-                    <button
-                      type="button"
-                      key={fmt}
-                      onClick={() => setLiveFormat(fmt)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold uppercase border ${
-                        liveFormat === fmt
-                          ? 'bg-indigo-500 text-white border-indigo-400'
-                          : 'bg-slate-900 text-slate-400 border-slate-700'
-                      }`}
-                    >
-                      {fmt === 'm3u8'
-                        ? 'HLS (.m3u8) — Multi-Track & Adaptive'
-                        : 'MPEG-TS (.ts) — Raw Broadcast'}
-                    </button>
-                  ))}
+              <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">
+                    Preferred Live TV Stream Format
+                  </label>
+                  <div className="flex space-x-2">
+                    {(['ts', 'm3u8'] as const).map((fmt) => (
+                      <button
+                        type="button"
+                        key={fmt}
+                        onClick={() => setLiveFormat(fmt)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase border ${
+                          liveFormat === fmt
+                            ? 'bg-indigo-500 text-white border-indigo-400'
+                            : 'bg-slate-900 text-slate-400 border-slate-700'
+                        }`}
+                      >
+                        {fmt === 'ts'
+                          ? 'MPEG-TS (.ts) — Recommended'
+                          : 'HLS (.m3u8)'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                <label className="flex items-center space-x-2.5 cursor-pointer bg-slate-900 px-4 py-2.5 rounded-xl border border-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={makeDefaultXtream}
+                    onChange={(e) => setMakeDefaultXtream(e.target.checked)}
+                    className="w-4 h-4 accent-amber-400 rounded"
+                  />
+                  <span className="text-xs font-bold text-amber-300">
+                    ★ Set as Default IPTV on Startup
+                  </span>
+                </label>
               </div>
 
               <button
@@ -399,6 +461,18 @@ export const PlaylistsView: React.FC = () => {
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono"
                 />
               </div>
+
+              <label className="flex items-center space-x-2.5 cursor-pointer bg-slate-900 px-4 py-2.5 rounded-xl border border-slate-800 w-fit">
+                <input
+                  type="checkbox"
+                  checked={makeDefaultM3u}
+                  onChange={(e) => setMakeDefaultM3u(e.target.checked)}
+                  className="w-4 h-4 accent-amber-400 rounded"
+                />
+                <span className="text-xs font-bold text-amber-300">
+                  ★ Set as Default IPTV on Startup
+                </span>
+              </label>
 
               <button
                 type="submit"

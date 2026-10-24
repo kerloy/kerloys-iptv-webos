@@ -23,6 +23,7 @@ import { parseXmltvEpg } from '../services/epg/epgService';
 const STORAGE_KEYS = {
   PROFILES: 'kerloy_iptv_profiles_v1',
   ACTIVE_PROFILE_ID: 'kerloy_iptv_active_profile_v1',
+  DEFAULT_PROFILE_ID: 'kerloy_iptv_default_profile_v1',
   FAVORITES: 'kerloy_iptv_favorites_v1',
   WATCH_HISTORY: 'kerloy_iptv_watch_history_v1',
   SETTINGS: 'kerloy_iptv_settings_v1',
@@ -32,6 +33,7 @@ const DEFAULT_DEMO_PROFILE: PlaylistProfile = {
   id: 'demo-profile',
   name: 'Kerloy Demo Showcase (4K Multi-Track)',
   type: 'demo',
+  isDefault: false,
   createdAt: Date.now(),
   lastSyncedAt: Date.now(),
   accountInfo: {
@@ -52,11 +54,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   subtitleColor: '#FFFFFF',
   subtitleBgOpacity: 75,
   playerEngine: 'auto',
-  liveStreamFormat: 'm3u8',
+  liveStreamFormat: 'ts',
   aspectRatio: 'fit',
   parentalPin: '0000',
   parentalEnabled: true,
   unlockedSession: false,
+  showAdultInMainMenus: false,
+  customAdultCategoryIds: [],
 };
 
 function loadFromStorage<T>(key: string, fallback: T): T {
@@ -73,7 +77,7 @@ function saveToStorage<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Ignore storage quota warnings on constrained devices
+    // Ignore storage quota warnings
   }
 }
 
@@ -91,6 +95,7 @@ interface AppState {
   activeTab: ActiveNavTab;
   profiles: PlaylistProfile[];
   activeProfileId: string;
+  defaultProfileId: string;
   isLoadingPlaylist: boolean;
   playlistError: string | null;
 
@@ -116,18 +121,21 @@ interface AppState {
   setSelectedSeries: (series: SeriesItem | null) => void;
 
   loadProfileCatalog: (profileId: string) => Promise<void>;
+  setDefaultProfile: (profileId: string) => void;
   addXtreamProfile: (input: {
     name: string;
     serverUrl: string;
     username: string;
     password: string;
     preferredLiveFormat: 'm3u8' | 'ts';
+    setAsDefault?: boolean;
   }) => Promise<void>;
   addM3UProfile: (input: {
     name: string;
     m3uUrl?: string;
     m3uContent?: string;
     epgUrl?: string;
+    setAsDefault?: boolean;
   }) => Promise<void>;
   removeProfile: (profileId: string) => void;
 
@@ -135,37 +143,57 @@ interface AppState {
   isFavorite: (itemId: string) => boolean;
   updateWatchProgress: (progress: WatchProgress) => void;
   updateSettings: (partial: Partial<AppSettings>) => void;
+  toggleCustomAdultCategory: (categoryKey: string) => void;
 
   requestAdultAccess: (onSuccess: () => void) => void;
   verifyPinAndUnlock: (pin: string) => boolean;
   closePinPrompt: () => void;
 }
 
-const initialProfiles = loadFromStorage<PlaylistProfile[]>(
+const storedProfiles = loadFromStorage<PlaylistProfile[]>(
   STORAGE_KEYS.PROFILES,
   [DEFAULT_DEMO_PROFILE]
 );
-const initialActiveId = loadFromStorage<string>(
-  STORAGE_KEYS.ACTIVE_PROFILE_ID,
-  initialProfiles[0]?.id || DEFAULT_DEMO_PROFILE.id
+const initialProfiles =
+  storedProfiles.length > 0 ? storedProfiles : [DEFAULT_DEMO_PROFILE];
+
+// Automatically prefer the user's Xtream Codes profile as default if they have one saved
+const firstXtreamProfile = initialProfiles.find((p) => p.type === 'xtream');
+const explicitDefaultProfile = initialProfiles.find((p) => p.isDefault);
+const storedDefaultId = loadFromStorage<string>(
+  STORAGE_KEYS.DEFAULT_PROFILE_ID,
+  explicitDefaultProfile?.id ||
+    firstXtreamProfile?.id ||
+    initialProfiles[0]?.id ||
+    DEFAULT_DEMO_PROFILE.id
 );
+
+// Always boot into the Default IPTV profile on app startup
+const startupProfileId = initialProfiles.some((p) => p.id === storedDefaultId)
+  ? storedDefaultId
+  : firstXtreamProfile?.id || initialProfiles[0].id;
+
+const normalizedInitialProfiles = initialProfiles.map((p) => ({
+  ...p,
+  isDefault: p.id === startupProfileId,
+}));
+
+const isBootingDemo = startupProfileId === 'demo-profile';
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeTab: 'home',
-  profiles: initialProfiles.length > 0 ? initialProfiles : [DEFAULT_DEMO_PROFILE],
-  activeProfileId: initialActiveId,
-  isLoadingPlaylist: false,
+  profiles: normalizedInitialProfiles,
+  activeProfileId: startupProfileId,
+  defaultProfileId: startupProfileId,
+  isLoadingPlaylist: !isBootingDemo,
   playlistError: null,
 
-  categories: DEMO_CATEGORIES,
-  liveChannels: DEMO_LIVE_CHANNELS,
-  movies: DEMO_MOVIES,
-  series: DEMO_SERIES,
+  categories: isBootingDemo ? DEMO_CATEGORIES : [],
+  liveChannels: isBootingDemo ? DEMO_LIVE_CHANNELS : [],
+  movies: isBootingDemo ? DEMO_MOVIES : [],
+  series: isBootingDemo ? DEMO_SERIES : [],
 
-  favoriteIds: loadFromStorage<string[]>(STORAGE_KEYS.FAVORITES, [
-    'demo-live-1',
-    'demo-movie-sintel',
-  ]),
+  favoriteIds: loadFromStorage<string[]>(STORAGE_KEYS.FAVORITES, []),
   watchHistory: loadFromStorage<Record<string, WatchProgress>>(
     STORAGE_KEYS.WATCH_HISTORY,
     {}
@@ -185,6 +213,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveMedia: (media) => set({ activeMedia: media }),
   setSelectedMovie: (movie) => set({ selectedMovie: movie }),
   setSelectedSeries: (series) => set({ selectedSeries: series }),
+
+  setDefaultProfile: (profileId: string) => {
+    const updatedProfiles = get().profiles.map((p) => ({
+      ...p,
+      isDefault: p.id === profileId,
+    }));
+    saveToStorage(STORAGE_KEYS.PROFILES, updatedProfiles);
+    saveToStorage(STORAGE_KEYS.DEFAULT_PROFILE_ID, profileId);
+    set({
+      profiles: updatedProfiles,
+      defaultProfileId: profileId,
+    });
+    if (get().activeProfileId !== profileId) {
+      get().loadProfileCatalog(profileId);
+    }
+  },
 
   loadProfileCatalog: async (profileId: string) => {
     const profile = get().profiles.find((p) => p.id === profileId);
@@ -209,7 +253,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      if (profile.type === 'xtream' && profile.serverUrl && profile.username && profile.password) {
+      if (
+        profile.type === 'xtream' &&
+        profile.serverUrl &&
+        profile.username &&
+        profile.password
+      ) {
         const client = new XtreamClient(
           profile.serverUrl,
           profile.username,
@@ -259,7 +308,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         const parsed = parseM3UPlaylist(rawM3U);
 
-        // Optionally load XMLTV EPG if provided
         const epgUrlToLoad = profile.epgUrl || parsed.epgUrl;
         if (epgUrlToLoad) {
           try {
@@ -270,7 +318,9 @@ export const useAppStore = create<AppState>((set, get) => ({
               const key = ch.epgChannelId || ch.name;
               const progs = epgMap.get(key);
               if (progs && progs.length > 0) {
-                ch.currentProgram = progs.find((p) => p.start <= nowTs && p.end >= nowTs) || progs[0];
+                ch.currentProgram =
+                  progs.find((p) => p.start <= nowTs && p.end >= nowTs) ||
+                  progs[0];
                 ch.nextProgram = progs.find((p) => p.start > nowTs);
               }
             });
@@ -308,10 +358,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         input.preferredLiveFormat
       );
       const accountInfo = await client.authenticate();
+      const makeDefault = input.setAsDefault ?? true;
+      const newId = `xtream-${Date.now()}`;
+
       const newProfile: PlaylistProfile = {
-        id: `xtream-${Date.now()}`,
+        id: newId,
         name: input.name.trim() || `Xtream (${input.username})`,
         type: 'xtream',
+        isDefault: makeDefault,
         createdAt: Date.now(),
         lastSyncedAt: Date.now(),
         serverUrl: input.serverUrl.trim(),
@@ -320,8 +374,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         preferredLiveFormat: input.preferredLiveFormat,
         accountInfo,
       };
-      const updated = [...get().profiles, newProfile];
+
+      const existing = get().profiles.map((p) =>
+        makeDefault ? { ...p, isDefault: false } : p
+      );
+      const updated = [newProfile, ...existing];
       saveToStorage(STORAGE_KEYS.PROFILES, updated);
+      if (makeDefault) {
+        saveToStorage(STORAGE_KEYS.DEFAULT_PROFILE_ID, newId);
+        set({ defaultProfileId: newId });
+      }
       set({ profiles: updated });
       await get().loadProfileCatalog(newProfile.id);
     } catch (err: unknown) {
@@ -344,21 +406,34 @@ export const useAppStore = create<AppState>((set, get) => ({
         content = await smartFetchText(input.m3uUrl);
       }
       if (!content.includes('#EXTM3U') && !content.includes('#EXTINF')) {
-        throw new Error('Invalid M3U playlist format (missing #EXTM3U / #EXTINF).');
+        throw new Error(
+          'Invalid M3U playlist format (missing #EXTM3U / #EXTINF).'
+        );
       }
 
+      const makeDefault = input.setAsDefault ?? true;
+      const newId = `m3u-${Date.now()}`;
       const newProfile: PlaylistProfile = {
-        id: `m3u-${Date.now()}`,
+        id: newId,
         name: input.name.trim() || 'M3U Playlist',
         type: 'm3u',
+        isDefault: makeDefault,
         createdAt: Date.now(),
         lastSyncedAt: Date.now(),
         m3uUrl: input.m3uUrl?.trim(),
         m3uContent: input.m3uUrl ? undefined : content,
         epgUrl: input.epgUrl?.trim(),
       };
-      const updated = [...get().profiles, newProfile];
+
+      const existing = get().profiles.map((p) =>
+        makeDefault ? { ...p, isDefault: false } : p
+      );
+      const updated = [newProfile, ...existing];
       saveToStorage(STORAGE_KEYS.PROFILES, updated);
+      if (makeDefault) {
+        saveToStorage(STORAGE_KEYS.DEFAULT_PROFILE_ID, newId);
+        set({ defaultProfileId: newId });
+      }
       set({ profiles: updated });
       await get().loadProfileCatalog(newProfile.id);
     } catch (err: unknown) {
@@ -372,9 +447,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   removeProfile: (profileId) => {
-    if (profileId === 'demo-profile') return;
+    if (profileId === 'demo-profile' && get().profiles.length === 1) return;
     const remaining = get().profiles.filter((p) => p.id !== profileId);
     const nextList = remaining.length > 0 ? remaining : [DEFAULT_DEMO_PROFILE];
+
+    if (get().defaultProfileId === profileId) {
+      const nextDefaultId = nextList[0].id;
+      nextList[0] = { ...nextList[0], isDefault: true };
+      saveToStorage(STORAGE_KEYS.DEFAULT_PROFILE_ID, nextDefaultId);
+      set({ defaultProfileId: nextDefaultId });
+    }
+
     saveToStorage(STORAGE_KEYS.PROFILES, nextList);
     set({ profiles: nextList });
     if (get().activeProfileId === profileId) {
@@ -407,6 +490,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = { ...get().settings, ...partial };
     saveToStorage(STORAGE_KEYS.SETTINGS, updated);
     set({ settings: updated });
+  },
+
+  toggleCustomAdultCategory: (categoryKey) => {
+    const current = get().settings.customAdultCategoryIds || [];
+    const exists = current.includes(categoryKey);
+    const updatedIds = exists
+      ? current.filter((k) => k !== categoryKey)
+      : [...current, categoryKey];
+    get().updateSettings({ customAdultCategoryIds: updatedIds });
   },
 
   requestAdultAccess: (onSuccess) => {

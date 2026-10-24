@@ -10,8 +10,6 @@ init({
   visualDebug: false,
 });
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+// Note: Do not wrap in React.StrictMode so VideoPlayer does not open
+// duplicate simultaneous stream connections to Xtream Codes servers (max_connections=1).
+ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
