@@ -344,6 +344,9 @@ function corsProxyPlugin(): Plugin {
         if (req.headers['api-key']) {
           forwardHeaders['Api-Key'] = String(req.headers['api-key']);
         }
+        if (req.headers['x-user-agent']) {
+          forwardHeaders['X-User-Agent'] = String(req.headers['x-user-agent']);
+        }
         if (req.headers['content-type']) {
           forwardHeaders['Content-Type'] = String(req.headers['content-type']);
         }

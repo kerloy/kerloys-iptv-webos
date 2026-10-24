@@ -11,6 +11,6 @@
   "bgColor": "#070B14",
   "transparent": false,
   "handlesRelaunch": true,
-  "disableBackHistoryAPI": true,
+  "disableBackHistoryAPI": false,
   "requiredACG": []
 }

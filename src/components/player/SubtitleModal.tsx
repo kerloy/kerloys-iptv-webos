@@ -17,10 +17,12 @@ import type {
   SubtitleTrackOption,
 } from '../../types/iptv';
 import {
+  cleanMediaTitleForSubtitleSearch,
   downloadExternalSubtitle,
   getLanguageLabel,
   searchExternalSubtitles,
 } from '../../services/subtitles/subtitleService';
+import { parseSubtitleCues } from '../../services/subtitles/vttParser';
 import { useAppStore } from '../../store/useAppStore';
 import { smartFetchText } from '../../utils/network';
 
@@ -57,10 +59,14 @@ export const SubtitleModal: React.FC<SubtitleModalProps> = ({
   onClose,
 }) => {
   const { settings, updateSettings } = useAppStore();
-  const [activeSection, setActiveSection] = useState<'tracks' | 'download' | 'custom' | 'sync'>('tracks');
+  const [activeSection, setActiveSection] = useState<'tracks' | 'download' | 'custom' | 'sync'>(
+    subtitleTracks.length > 0 ? 'tracks' : 'download'
+  );
 
   // Search & Download state
-  const [searchQuery, setSearchQuery] = useState(media.title.replace(/\(\d{4}\).*/, '').trim());
+  const [searchQuery, setSearchQuery] = useState(
+    cleanMediaTitleForSubtitleSearch(media.title) || media.title
+  );
   const [selectedLang, setSelectedLang] = useState(
     settings.preferredSubtitleLanguages[0] || 'en'
   );
@@ -110,15 +116,19 @@ export const SubtitleModal: React.FC<SubtitleModalProps> = ({
 
   const handleDownloadAndActivate = async (item: ExternalSubtitleTrack) => {
     setDownloadingId(item.id);
-    setStatusMessage(null);
+    setStatusMessage(`Downloading & extracting ${item.releaseName}...`);
     try {
       const rawContent = await downloadExternalSubtitle(
         item,
         settings.openSubtitlesApiKey
       );
+      const parsed = parseSubtitleCues(rawContent);
+      if (parsed.length === 0) {
+        throw new Error('Subtitle file did not contain valid SRT/VTT timecodes. Try another release below.');
+      }
       const newTrack: SubtitleTrackOption = {
         id: `dl-${item.id}`,
-        label: `${item.languageName} — ${item.releaseName}`,
+        label: `${item.languageName} — ${item.releaseName} (${parsed.length} lines)`,
         language: item.language,
         source: item.provider === 'subdl' ? 'subdl' : 'opensubtitles',
         rawContent,
@@ -126,8 +136,12 @@ export const SubtitleModal: React.FC<SubtitleModalProps> = ({
         active: true,
       };
       onAddExternalSubtitle(newTrack);
-      setStatusMessage(`Downloaded & activated: ${item.releaseName}`);
-      setActiveSection('tracks');
+      setStatusMessage(
+        `✓ Activated ${item.languageName} subtitle (${parsed.length} dialogue lines synced)`
+      );
+      window.setTimeout(() => {
+        onClose();
+      }, 450);
     } catch (err: unknown) {
       setStatusMessage(
         err instanceof Error ? err.message : 'Failed to download subtitle'

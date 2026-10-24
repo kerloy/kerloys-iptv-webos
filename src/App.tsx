@@ -18,6 +18,7 @@ import {
   Radio,
   Filter,
   ChevronDown,
+  LogOut,
 } from 'lucide-react';
 import { useAppStore, type ActiveNavTab } from './store/useAppStore';
 import type { LiveChannel, MovieItem, SeriesItem } from './types/iptv';
@@ -27,7 +28,7 @@ import { MediaDetailModal } from './components/modals/MediaDetailModal';
 import { ParentalPinModal } from './components/modals/ParentalPinModal';
 import { PlaylistsView } from './components/playlists/PlaylistsView';
 import { SettingsView } from './components/settings/SettingsView';
-import { TV_KEYS, isBackKey } from './utils/tvRemote';
+import { TV_KEYS, isBackKey, isExitKey, exitWebOSApp } from './utils/tvRemote';
 
 const PAGE_SIZE = 60;
 
@@ -114,10 +115,16 @@ export const App: React.FC = () => {
     setSeriesPageLimit(PAGE_SIZE);
   }, [activeProfileId, liveChannels.length]);
 
-  // Global LG Remote color key shortcuts when player is closed
+  // Global LG Remote Back, Exit & color key shortcuts when player is closed
   useEffect(() => {
     const handleGlobalKey = (e: KeyboardEvent) => {
       if (activeMedia) return;
+
+      if (isExitKey(e)) {
+        e.preventDefault();
+        exitWebOSApp();
+        return;
+      }
 
       if (isBackKey(e)) {
         if (selectedMovie || selectedSeries) {
@@ -129,7 +136,10 @@ export const App: React.FC = () => {
         if (activeTab !== 'home') {
           e.preventDefault();
           setActiveTab('home');
+          return;
         }
+        // On Home screen, pressing Back exits the LG webOS TV app
+        exitWebOSApp();
         return;
       }
 
@@ -392,25 +402,25 @@ export const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-[#070B14] text-slate-100 flex overflow-hidden">
       {/* Left 10-Foot TV Navigation Rail */}
-      <aside className="w-60 bg-[#0B101E] border-r border-slate-800/80 flex flex-col justify-between p-4 shrink-0">
-        <div className="space-y-5">
+      <aside className="w-64 bg-[#0B101E] border-r border-slate-800/80 flex flex-col justify-between p-4 shrink-0">
+        <div className="space-y-4">
           {/* App Brand Logo */}
           <div className="flex items-center space-x-3 px-2">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
-              <Tv className="w-5 h-5 text-slate-950 stroke-[2.5]" />
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+              <Tv className="w-6 h-6 text-slate-950 stroke-[2.5]" />
             </div>
             <div>
               <div className="font-extrabold text-base tracking-tight text-white leading-none">
                 KERLOY IPTV
               </div>
-              <div className="text-[11px] font-semibold text-sky-400 mt-1">
-                LG webOS 5.x+ Edition
+              <div className="text-xs font-semibold text-sky-400 mt-1">
+                LG webOS TV
               </div>
             </div>
           </div>
 
           {/* Navigation Buttons */}
-          <nav className="space-y-1">
+          <nav className="space-y-1.5">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -418,22 +428,22 @@ export const App: React.FC = () => {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-sm transition-all focus:outline-none focus:ring-2 focus:ring-sky-400 ${
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold text-sm transition-all focus:outline-none focus:ring-2 focus:ring-sky-400 ${
                     isActive
                       ? 'bg-gradient-to-r from-sky-500 to-indigo-500 text-slate-950 shadow-md shadow-sky-500/20'
-                      : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                      : 'text-slate-200 hover:bg-slate-800/70 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center space-x-3">
-                    <Icon className="w-4 h-4" />
+                    <Icon className="w-5 h-5 shrink-0" />
                     <span>{item.label}</span>
                   </div>
                   {item.badge !== undefined && item.badge > 0 && (
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      className={`px-2 py-0.5 rounded-full text-xs font-extrabold ${
                         isActive
                           ? 'bg-slate-950/25 text-slate-950'
-                          : 'bg-slate-800 text-slate-400'
+                          : 'bg-slate-800 text-slate-300'
                       }`}
                     >
                       {item.badge > 9999
@@ -447,22 +457,32 @@ export const App: React.FC = () => {
           </nav>
         </div>
 
-        {/* Active Profile Pill */}
-        <div className="p-3 rounded-2xl bg-[#11192E] border border-slate-800 space-y-1.5">
-          <div className="flex items-center justify-between text-[10px] text-slate-400">
-            <span className="uppercase font-bold text-sky-400">
-              {activeProfile?.type || 'DEMO'} SOURCE
-            </span>
-            <span className="font-mono">{clockText}</span>
+        {/* Active Profile Pill + Exit App Button */}
+        <div className="space-y-2.5">
+          <div className="p-3 rounded-2xl bg-[#11192E] border border-slate-800 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span className="uppercase font-bold text-sky-400">
+                {activeProfile?.type || 'DEMO'} SOURCE
+              </span>
+              <span className="font-mono">{clockText}</span>
+            </div>
+            <div className="text-sm font-bold text-white truncate">
+              {activeProfile?.name}
+            </div>
+            <button
+              onClick={() => setActiveTab('playlists')}
+              className="w-full mt-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-sky-300"
+            >
+              Switch Xtream / M3U
+            </button>
           </div>
-          <div className="text-xs font-bold text-white truncate">
-            {activeProfile?.name}
-          </div>
+
           <button
-            onClick={() => setActiveTab('playlists')}
-            className="w-full mt-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-sky-300"
+            onClick={() => exitWebOSApp()}
+            className="w-full py-2.5 px-4 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-sm flex items-center justify-center space-x-2"
           >
-            Switch Xtream / M3U
+            <LogOut className="w-5 h-5" />
+            <span>Exit TV App</span>
           </button>
         </div>
       </aside>
@@ -1114,7 +1134,7 @@ export const App: React.FC = () => {
 
               {/* Scrollable Poster Grid */}
               <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
                   {filteredMovies.slice(0, moviePageLimit).map((mv) => (
                     <button
                       key={mv.id}
@@ -1317,7 +1337,7 @@ export const App: React.FC = () => {
 
               {/* Scrollable Series Grid */}
               <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
                   {filteredSeries.slice(0, seriesPageLimit).map((sr) => (
                     <button
                       key={sr.id}

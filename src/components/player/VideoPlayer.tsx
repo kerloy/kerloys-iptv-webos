@@ -22,7 +22,7 @@ import type {
   VideoTrackOption,
 } from '../../types/iptv';
 import { useAppStore } from '../../store/useAppStore';
-import { TV_KEYS, isBackKey } from '../../utils/tvRemote';
+import { TV_KEYS, isBackKey, isExitKey, exitWebOSApp } from '../../utils/tvRemote';
 import { toPlayableStreamUrl } from '../../utils/network';
 import {
   getActiveCueText,
@@ -77,6 +77,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
   const [subtitleOffsetMs, setSubtitleOffsetMs] = useState<number>(0);
   const [parsedCues, setParsedCues] = useState<SubtitleCue[]>([]);
   const [currentCueText, setCurrentCueText] = useState<string | null>(null);
+  const [subtitleNotice, setSubtitleNotice] = useState<string | null>(null);
 
   // Modals
   const [showSubtitleModal, setShowSubtitleModal] = useState(false);
@@ -558,8 +559,35 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
     if (found?.rawContent) {
       const cues = parseSubtitleCues(found.rawContent);
       setParsedCues(cues);
+      if (videoRef.current) {
+        setCurrentCueText(
+          getActiveCueText(cues, videoRef.current.currentTime || 0, subtitleOffsetMs)
+        );
+      }
+      setSubtitleNotice(`✓ Subtitle Active: ${found.label}`);
+      const timer = window.setTimeout(() => setSubtitleNotice(null), 4000);
+      return () => window.clearTimeout(timer);
     }
-  }, [activeSubtitleId, subtitleTracks]);
+  }, [activeSubtitleId, subtitleTracks, subtitleOffsetMs]);
+
+  // High-frequency 250ms subtitle cue ticker so LG webOS hardware video pipeline
+  // always displays subtitles accurately even when onTimeUpdate fires infrequently
+  useEffect(() => {
+    if (parsedCues.length === 0 || activeSubtitleId === 'off') return;
+
+    const tick = window.setInterval(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      const cueText = getActiveCueText(
+        parsedCues,
+        video.currentTime || 0,
+        subtitleOffsetMs
+      );
+      setCurrentCueText((prev) => (prev === cueText ? prev : cueText));
+    }, 250);
+
+    return () => window.clearInterval(tick);
+  }, [activeSubtitleId, parsedCues, subtitleOffsetMs]);
 
   const handleTimeUpdate = () => {
     const video = videoRef.current;
@@ -675,6 +703,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
     const handleKeyDown = (e: KeyboardEvent) => {
       revealOsd();
 
+      if (isExitKey(e)) {
+        e.preventDefault();
+        cleanupEngines();
+        exitWebOSApp();
+        return;
+      }
+
       if (isBackKey(e)) {
         e.preventDefault();
         e.stopPropagation();
@@ -770,12 +805,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
 
   const fontSizeClass =
     settings.subtitleFontSize === 'small'
-      ? 'text-lg'
+      ? 'text-2xl'
       : settings.subtitleFontSize === 'medium'
-        ? 'text-2xl'
+        ? 'text-3xl'
         : settings.subtitleFontSize === 'xlarge'
-          ? 'text-4xl'
-          : 'text-3xl';
+          ? 'text-5xl'
+          : 'text-4xl';
 
   return (
     <div
@@ -801,15 +836,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
         onCanPlay={() => setIsBuffering(false)}
       />
 
+      {/* Subtitle Activated Confirmation Banner */}
+      {subtitleNotice && (
+        <div className="fixed top-20 inset-x-0 flex justify-center pointer-events-none z-50 px-8">
+          <div className="px-6 py-3 rounded-2xl bg-emerald-500/95 text-slate-950 font-extrabold text-base shadow-2xl">
+            {subtitleNotice}
+          </div>
+        </div>
+      )}
+
       {/* Custom High-Contrast Subtitle Overlay */}
       {currentCueText && activeSubtitleId !== 'off' && (
         <div className="fixed bottom-28 inset-x-0 flex justify-center pointer-events-none px-12 z-40">
           <div
-            className={`px-6 py-2.5 rounded-xl font-semibold text-center whitespace-pre-line leading-snug shadow-lg ${fontSizeClass}`}
+            className={`px-7 py-3 rounded-2xl font-bold text-center whitespace-pre-line leading-snug shadow-2xl ${fontSizeClass}`}
             style={{
               color: settings.subtitleColor,
               backgroundColor: `rgba(0, 0, 0, ${settings.subtitleBgOpacity / 100})`,
-              textShadow: '0 2px 4px rgba(0,0,0,0.9)',
+              textShadow: '0 2px 6px rgba(0,0,0,0.95)',
             }}
           >
             {currentCueText}
