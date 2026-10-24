@@ -1,0 +1,55 @@
+{
+  "name": "kerloys-iptv-webos",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Cinema-grade IPTV Player for LG webOS TVs (webOS 5.x / 2020+) supporting Xtream Codes, M3U Playlists, Multi-Track Audio/Video Streams, and OpenSubtitles/SubDL",
+  "keywords": [
+    "lg-webos",
+    "webos-tv",
+    "iptv",
+    "xtream-codes",
+    "m3u-player",
+    "opensubtitles",
+    "subdl",
+    "smart-tv"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host",
+    "build:ipk": "npm run build && npx ares-package dist -o ./release",
+    "deploy:tv": "npm run build:ipk && npx ares-install ./release/com.kerloy.iptv_1.0.0_all.ipk",
+    "launch:tv": "npx ares-launch com.kerloy.iptv",
+    "setup:tv": "npx ares-setup-device",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@noriginmedia/norigin-spatial-navigation": "^2.2.3",
+    "clsx": "^2.1.1",
+    "fflate": "^0.8.2",
+    "hls.js": "^1.5.17",
+    "lucide-react": "^0.468.0",
+    "mpegts.js": "^1.7.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-legacy": "^5.4.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@webos-tools/cli": "latest",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "terser": "^5.37.0",
+    "typescript": "~5.6.2",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "com.kerloy.iptv",
+  "version": "1.0.0",
+  "vendor": "Kerloy",
+  "type": "web",
+  "main": "index.html",
+  "title": "Kerloy's IPTV",
+  "icon": "icon80.png",
+  "largeIcon": "icon130.png",
+  "resolution": "1920x1080",
+  "bgColor": "#070B14",
+  "transparent": false,
+  "handlesRelaunch": true,
+  "disableBackHistoryAPI": true,
+  "requiredACG": []
+}
