@@ -19,6 +19,11 @@ import { XtreamClient } from '../services/xtream/xtreamClient';
 import { parseM3UPlaylist } from '../services/m3u/m3uParser';
 import { smartFetchText } from '../utils/network';
 import { parseXmltvEpg } from '../services/epg/epgService';
+import {
+  deleteCatalogFromCache,
+  loadCatalogFromCache,
+  saveCatalogToCache,
+} from '../services/storage/catalogCache';
 
 const STORAGE_KEYS = {
   PROFILES: 'kerloy_iptv_profiles_v1',
@@ -120,7 +125,7 @@ interface AppState {
   setSelectedMovie: (movie: MovieItem | null) => void;
   setSelectedSeries: (series: SeriesItem | null) => void;
 
-  loadProfileCatalog: (profileId: string) => Promise<void>;
+  loadProfileCatalog: (profileId: string, forceNetworkRefresh?: boolean) => Promise<void>;
   setDefaultProfile: (profileId: string) => void;
   addXtreamProfile: (input: {
     name: string;
@@ -230,7 +235,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  loadProfileCatalog: async (profileId: string) => {
+  loadProfileCatalog: async (profileId: string, forceNetworkRefresh = false) => {
     const profile = get().profiles.find((p) => p.id === profileId);
     if (!profile) return;
 
@@ -251,6 +256,26 @@ export const useAppStore = create<AppState>((set, get) => ({
           isLoadingPlaylist: false,
         });
         return;
+      }
+
+      // 1. Check IndexedDB cache first for instant (<0.2s) startup on LG TV
+      if (!forceNetworkRefresh) {
+        const cached = await loadCatalogFromCache(profileId);
+        if (
+          cached &&
+          (cached.liveChannels.length > 0 ||
+            cached.movies.length > 0 ||
+            cached.series.length > 0)
+        ) {
+          set({
+            categories: cached.categories,
+            liveChannels: cached.liveChannels,
+            movies: cached.movies,
+            series: cached.series,
+            isLoadingPlaylist: false,
+          });
+          return;
+        }
       }
 
       if (
@@ -283,6 +308,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           client.getSeriesList(seriesCatMap).catch(() => []),
         ]);
 
+        const allCategories = [...liveCats, ...vodCats, ...seriesCats];
         const updatedProfiles = get().profiles.map((p) =>
           p.id === profile.id
             ? { ...p, accountInfo, lastSyncedAt: Date.now() }
@@ -290,9 +316,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         );
         saveToStorage(STORAGE_KEYS.PROFILES, updatedProfiles);
 
+        // Persist full downloaded catalog in IndexedDB on the TV
+        await saveCatalogToCache(profile.id, {
+          categories: allCategories,
+          liveChannels,
+          movies,
+          series,
+        });
+
         set({
           profiles: updatedProfiles,
-          categories: [...liveCats, ...vodCats, ...seriesCats],
+          categories: allCategories,
           liveChannels,
           movies,
           series,
@@ -328,6 +362,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             // EPG optional
           }
         }
+
+        await saveCatalogToCache(profile.id, {
+          categories: parsed.categories,
+          liveChannels: parsed.liveChannels,
+          movies: parsed.movies,
+          series: parsed.series,
+        });
 
         set({
           categories: parsed.categories,
@@ -448,6 +489,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   removeProfile: (profileId) => {
     if (profileId === 'demo-profile' && get().profiles.length === 1) return;
+    deleteCatalogFromCache(profileId);
     const remaining = get().profiles.filter((p) => p.id !== profileId);
     const nextList = remaining.length > 0 ? remaining : [DEFAULT_DEMO_PROFILE];
 

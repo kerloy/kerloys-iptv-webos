@@ -29,6 +29,10 @@ import {
   parseSubtitleCues,
   type SubtitleCue,
 } from '../../services/subtitles/vttParser';
+import {
+  loadSubtitlesFromCache,
+  saveSubtitlesToCache,
+} from '../../services/storage/catalogCache';
 import { SubtitleModal } from './SubtitleModal';
 import { TrackSelectorModal } from './TrackSelectorModal';
 
@@ -444,11 +448,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
     triedFallbackRef.current = false;
     initPlayback(media.streamUrl);
     revealOsd();
+
+    // Restore any previously downloaded subtitles & timing sync offset from IndexedDB
+    loadSubtitlesFromCache(media.id).then((cached) => {
+      if (cached && cached.tracks.length > 0) {
+        setSubtitleTracks((prev) => {
+          const embeddedOnly = prev.filter((p) => p.source === 'embedded');
+          return [...cached.tracks, ...embeddedOnly];
+        });
+        setActiveSubtitleId(cached.activeSubtitleId);
+        setSubtitleOffsetMs(cached.subtitleOffsetMs);
+      }
+    });
+
     return () => {
       cleanupEngines();
       if (osdTimeoutRef.current) window.clearTimeout(osdTimeoutRef.current);
     };
-  }, [initPlayback, media.streamUrl]);
+  }, [initPlayback, media.id, media.streamUrl]);
 
   // Update active subtitle cues when active track changes
   useEffect(() => {
@@ -957,12 +974,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
           subtitleTracks={subtitleTracks}
           activeSubtitleId={activeSubtitleId}
           subtitleOffsetMs={subtitleOffsetMs}
-          onSelectTrack={(id) => setActiveSubtitleId(id)}
-          onAddExternalSubtitle={(newTrack) => {
-            setSubtitleTracks((prev) => [newTrack, ...prev]);
-            setActiveSubtitleId(newTrack.id);
+          onSelectTrack={(id) => {
+            setActiveSubtitleId(id);
+            saveSubtitlesToCache(media.id, subtitleTracks, id, subtitleOffsetMs);
           }}
-          onChangeOffsetMs={(offset) => setSubtitleOffsetMs(offset)}
+          onAddExternalSubtitle={(newTrack) => {
+            const nextTracks = [newTrack, ...subtitleTracks];
+            setSubtitleTracks(nextTracks);
+            setActiveSubtitleId(newTrack.id);
+            saveSubtitlesToCache(media.id, nextTracks, newTrack.id, subtitleOffsetMs);
+          }}
+          onChangeOffsetMs={(offset) => {
+            setSubtitleOffsetMs(offset);
+            saveSubtitlesToCache(media.id, subtitleTracks, activeSubtitleId, offset);
+          }}
           onClose={() => setShowSubtitleModal(false)}
         />
       )}

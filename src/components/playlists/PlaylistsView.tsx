@@ -121,7 +121,7 @@ export const PlaylistsView: React.FC = () => {
               </p>
             </div>
             <button
-              onClick={() => loadProfileCatalog(activeProfileId)}
+              onClick={() => loadProfileCatalog(activeProfileId, true)}
               disabled={isLoadingPlaylist}
               className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-sky-400 flex items-center space-x-1.5"
             >
