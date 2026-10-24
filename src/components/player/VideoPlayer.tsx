@@ -96,7 +96,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
 
   const cleanupEngines = () => {
     if (hlsRef.current) {
-      hlsRef.current.destroy();
+      try {
+        hlsRef.current.destroy();
+      } catch {}
       hlsRef.current = null;
     }
     if (mpegtsRef.current) {
@@ -108,6 +110,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
         // Ignore cleanup errors
       }
       mpegtsRef.current = null;
+    }
+    const video = videoRef.current;
+    if (video) {
+      try {
+        video.onloadedmetadata = null;
+        video.onerror = null;
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      } catch {}
     }
   };
 
@@ -174,11 +186,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
             cors: true,
           },
           {
-            enableWorker: true,
-            enableStashBuffer: true,
-            stashInitialSize: 384 * 1024,
+            // Keep enableWorker: false so player.unload() immediately aborts the HTTP fetch
+            // on the main thread instead of leaking a background worker connection on Xtream servers (max_connections=1)
+            enableWorker: false,
+            enableStashBuffer: false,
             autoCleanupSourceBuffer: true,
-            liveBufferLatencyChasing: false,
+            autoCleanupMaxBackwardDuration: 20,
+            autoCleanupMinBackwardDuration: 10,
+            liveBufferLatencyChasing: true,
+            liveBufferLatencyMaxLatency: 5.0,
+            liveBufferLatencyMinRemain: 1.2,
           }
         );
         mpegtsRef.current = player;
@@ -466,6 +483,57 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ media, onClose }) => {
       if (osdTimeoutRef.current) window.clearTimeout(osdTimeoutRef.current);
     };
   }, [initPlayback, media.id, media.streamUrl]);
+
+  // Live TV MSE Buffer-Gap Jumper & Stall Recovery Watchdog
+  useEffect(() => {
+    if (media.type !== 'live' || playbackError) return;
+
+    let lastVideoTime = -1;
+    let stallTicks = 0;
+
+    const timer = window.setInterval(() => {
+      const video = videoRef.current;
+      if (!video || !isPlaying) return;
+
+      const nowTime = video.currentTime;
+      if (nowTime > 0 && Math.abs(nowTime - lastVideoTime) > 0.05) {
+        lastVideoTime = nowTime;
+        stallTicks = 0;
+        setIsBuffering(false);
+        return;
+      }
+
+      stallTicks += 1;
+
+      // 1. If MSE has buffered video ahead of a timestamp discontinuity / buffer hole, jump over the gap
+      if (video.buffered && video.buffered.length > 0) {
+        const lastIdx = video.buffered.length - 1;
+        const bufStart = video.buffered.start(lastIdx);
+        const bufEnd = video.buffered.end(lastIdx);
+
+        if (bufEnd > nowTime + 0.6) {
+          const targetJump = Math.max(bufStart + 0.1, bufEnd - 1.0);
+          if (targetJump > nowTime + 0.15) {
+            video.currentTime = targetJump;
+            video.play().catch(() => {});
+            lastVideoTime = targetJump;
+            stallTicks = 0;
+            setIsBuffering(false);
+            return;
+          }
+        }
+      }
+
+      // 2. If stream played initially and then upstream TCP stream stalled for ~7.5s, auto-reconnect
+      if (nowTime > 0.5 && stallTicks >= 5) {
+        stallTicks = 0;
+        lastVideoTime = -1;
+        initPlayback(activeStreamUrl);
+      }
+    }, 1500);
+
+    return () => window.clearInterval(timer);
+  }, [activeStreamUrl, initPlayback, isPlaying, media.type, playbackError]);
 
   // Update active subtitle cues when active track changes
   useEffect(() => {

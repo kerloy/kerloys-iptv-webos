@@ -18,6 +18,39 @@ const redirectCache = new Map<
   { finalUrl: string; cookies: string[]; expiresAt: number }
 >();
 
+/**
+ * Track active video stream connections (Live TS, VOD ffmpeg, VOD MP4) so that
+ * on Xtream Codes accounts with `max_connections: 1`, opening a new stream
+ * immediately terminates any lingering previous stream connection or ffmpeg process.
+ */
+interface ActiveStreamSession {
+  id: number;
+  rawTarget: string;
+  isFfmpegOrLive: boolean;
+  cleanup: () => void;
+}
+let nextSessionId = 1;
+const activeStreamSessions = new Map<number, ActiveStreamSession>();
+
+function terminateConflictingStreams(newRawTarget: string, isLiveOrFfmpeg: boolean): boolean {
+  let killedAny = false;
+  for (const [id, session] of activeStreamSessions.entries()) {
+    // Always kill previous Live TV / ffmpeg streams, or any stream for a different URL
+    if (isLiveOrFfmpeg || session.isFfmpegOrLive || session.rawTarget !== newRawTarget) {
+      try {
+        session.cleanup();
+        killedAny = true;
+      } catch {}
+      activeStreamSessions.delete(id);
+    }
+  }
+  return killedAny;
+}
+
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function requestWithRedirects(
   targetUrl: string,
   options: {
@@ -52,6 +85,14 @@ function requestWithRedirects(
       reqHeaders['Cookie'] = cookies.join('; ');
     }
 
+    let settled = false;
+    const connectTimer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        clientReq.destroy(new Error('Upstream IPTV server connection timeout'));
+      }
+    }, 18000);
+
     const clientReq = transport.request(
       parsedUrl,
       {
@@ -59,9 +100,15 @@ function requestWithRedirects(
         headers: reqHeaders,
         insecureHTTPParser: true,
         rejectUnauthorized: false,
-        timeout: 25000,
       },
       (upstreamRes) => {
+        clearTimeout(connectTimer);
+        settled = true;
+
+        // Disable socket idle timeout once headers arrive so Live TV streams never time out
+        upstreamRes.socket?.setTimeout(0);
+        upstreamRes.socket?.setKeepAlive(true, 10000);
+
         const statusCode = upstreamRes.statusCode || 200;
         const location = upstreamRes.headers.location;
 
@@ -113,9 +160,10 @@ function requestWithRedirects(
       }
     );
 
-    clientReq.on('error', (err) => reject(err));
-    clientReq.on('timeout', () => {
-      clientReq.destroy(new Error('Upstream IPTV server connection timeout'));
+    clientReq.on('error', (err) => {
+      clearTimeout(connectTimer);
+      settled = true;
+      reject(err);
     });
     clientReq.end();
   });
@@ -146,6 +194,43 @@ function corsProxyPlugin(): Plugin {
           return;
         }
 
+        const lowerRawTarget = rawTarget.toLowerCase().split('?')[0];
+        const isApiCall =
+          lowerRawTarget.includes('player_api.php') ||
+          lowerRawTarget.includes('xmltv.php') ||
+          lowerRawTarget.includes('info_api.php') ||
+          lowerRawTarget.includes('opensubtitles') ||
+          lowerRawTarget.includes('subdl');
+
+        const isVodMkvOrAvi =
+          !isApiCall &&
+          (lowerRawTarget.endsWith('.mkv') ||
+            lowerRawTarget.endsWith('.avi') ||
+            forceTranscode === 'mp4');
+
+        const isLikelyStream =
+          !isApiCall &&
+          (isVodMkvOrAvi ||
+            lowerRawTarget.endsWith('.ts') ||
+            lowerRawTarget.endsWith('.mp4') ||
+            lowerRawTarget.includes('/live/') ||
+            lowerRawTarget.includes('/movie/') ||
+            lowerRawTarget.includes('/series/'));
+
+        // Enforce single active stream for Xtream Codes max_connections=1
+        if (isLikelyStream) {
+          const isLiveOrFfmpeg =
+            isVodMkvOrAvi ||
+            lowerRawTarget.endsWith('.ts') ||
+            lowerRawTarget.includes('/live/') ||
+            Boolean(forceTranscode);
+          const killedPrevious = terminateConflictingStreams(rawTarget, isLiveOrFfmpeg);
+          if (killedPrevious) {
+            // Brief pause so Xtream edge server registers the previous socket disconnect
+            await delayMs(60);
+          }
+        }
+
         // Check if we already have a cached CDN token URL for this VOD file
         const cached = redirectCache.get(rawTarget);
         const effectiveTarget =
@@ -153,19 +238,12 @@ function corsProxyPlugin(): Plugin {
         const initialCookies =
           cached && cached.expiresAt > Date.now() ? [...cached.cookies] : [];
 
-        const lowerRawTarget = rawTarget.toLowerCase().split('?')[0];
-        const isVodMkvOrAvi =
-          lowerRawTarget.endsWith('.mkv') ||
-          lowerRawTarget.endsWith('.avi') ||
-          forceTranscode === 'mp4';
-
         // 1. For VOD .MKV / .AVI (or explicit mp4 remux), let ffmpeg read the resolved HTTP URL directly
         // and remux into hardware-accelerated Fragmented MP4 (-f mp4) for native <video> playback!
         if (isVodMkvOrAvi && ffmpegPath && forceTranscode !== 'off') {
           try {
             let vodFinalUrl = effectiveTarget;
             if (vodFinalUrl === rawTarget) {
-              // Resolve the 302 redirect once so ffmpeg connects directly to the edge CDN
               const probe = await requestWithRedirects(rawTarget, {
                 method: 'GET',
                 headers: {
@@ -188,12 +266,6 @@ function corsProxyPlugin(): Plugin {
               'error',
               '-user_agent',
               'VLC/3.0.20 LibVLC/3.0.20',
-              '-reconnect',
-              '1',
-              '-reconnect_streamed',
-              '1',
-              '-reconnect_delay_max',
-              '5',
               ...seekArgs,
               '-i',
               vodFinalUrl,
@@ -224,6 +296,20 @@ function corsProxyPlugin(): Plugin {
               stdio: ['ignore', 'pipe', 'pipe'],
             });
 
+            const sessionId = nextSessionId++;
+            const cleanup = () => {
+              activeStreamSessions.delete(sessionId);
+              try {
+                ffProc.kill('SIGKILL');
+              } catch {}
+            };
+            activeStreamSessions.set(sessionId, {
+              id: sessionId,
+              rawTarget,
+              isFfmpegOrLive: true,
+              cleanup,
+            });
+
             res.statusCode = 200;
             res.setHeader('Access-Control-Allow-Origin', '*');
             res.setHeader('Content-Type', 'video/mp4');
@@ -234,14 +320,10 @@ function corsProxyPlugin(): Plugin {
               if (msg) console.warn(`[ffmpeg-vod] ${msg}`);
             });
 
-            const cleanup = () => {
-              try {
-                ffProc.kill('SIGKILL');
-              } catch {}
-            };
             req.on('close', cleanup);
             res.on('close', cleanup);
             ffProc.on('close', () => {
+              activeStreamSessions.delete(sessionId);
               if (!res.writableEnded) res.end();
             });
             return;
@@ -307,9 +389,23 @@ function corsProxyPlugin(): Plugin {
 
           const lowerFinal = finalUrl.toLowerCase().split('?')[0];
           const isLiveMpegTs =
-            contentType.includes('mp2t') ||
-            lowerFinal.endsWith('.ts') ||
-            lowerRawTarget.endsWith('.ts');
+            !contentType.includes('text/html') &&
+            (contentType.includes('mp2t') ||
+              lowerFinal.endsWith('.ts') ||
+              lowerRawTarget.endsWith('.ts'));
+
+          // If Xtream returned text/html on a .ts stream (e.g. temporary connection limit or offline channel),
+          // return 502 instead of piping HTML into ffmpeg or mpegts.js
+          if (
+            (lowerRawTarget.endsWith('.ts') || lowerFinal.endsWith('.ts')) &&
+            contentType.includes('text/html')
+          ) {
+            upstreamRes.destroy();
+            upstreamReq.destroy();
+            res.statusCode = 502;
+            res.end(JSON.stringify({ error: 'Upstream returned HTML instead of MPEG-TS stream' }));
+            return;
+          }
 
           // 2. For Live TV MPEG-TS (.ts) streams, remux Audio (AC-3/E-AC-3/MP2 -> AAC) via ffmpeg
           if (
@@ -321,17 +417,24 @@ function corsProxyPlugin(): Plugin {
           ) {
             const videoCodecArgs =
               forceTranscode === 'h264'
-                ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency']
-                : ['-c:v', 'copy', '-bsf:v', 'dump_extra'];
+                ? [
+                    '-c:v',
+                    'libx264',
+                    '-preset',
+                    'ultrafast',
+                    '-tune',
+                    'zerolatency',
+                    '-g',
+                    '50',
+                  ]
+                : ['-c:v', 'copy'];
 
             const ffArgs = [
               '-hide_banner',
               '-loglevel',
               'error',
               '-fflags',
-              '+genpts+igndts+discardcorrupt+nobuffer',
-              '-flags',
-              'low_delay',
+              '+genpts+discardcorrupt+nobuffer',
               '-i',
               'pipe:0',
               '-map',
@@ -345,6 +448,8 @@ function corsProxyPlugin(): Plugin {
               '192k',
               '-ac',
               '2',
+              '-af',
+              'aresample=async=1:first_pts=0',
               '-f',
               'mpegts',
               'pipe:1',
@@ -358,8 +463,25 @@ function corsProxyPlugin(): Plugin {
               stdio: ['pipe', 'pipe', 'pipe'],
             });
 
+            const sessionId = nextSessionId++;
+            const cleanup = () => {
+              activeStreamSessions.delete(sessionId);
+              try {
+                ffProc.kill('SIGKILL');
+              } catch {}
+              upstreamRes.destroy();
+              upstreamReq.destroy();
+            };
+            activeStreamSessions.set(sessionId, {
+              id: sessionId,
+              rawTarget,
+              isFfmpegOrLive: true,
+              cleanup,
+            });
+
             res.statusCode = 200;
             res.setHeader('Content-Type', 'video/mp2t');
+            res.setHeader('Cache-Control', 'no-cache, no-store');
 
             upstreamRes.pipe(ffProc.stdin);
             ffProc.stdout.pipe(res);
@@ -367,31 +489,47 @@ function corsProxyPlugin(): Plugin {
             ffProc.stdin.on('error', () => {});
             ffProc.stderr.on('data', (errChunk: Buffer) => {
               const msg = errChunk.toString('utf8').trim();
-              if (msg && !msg.includes('non-existing PPS') && !msg.includes('decode_slice_header')) {
+              if (
+                msg &&
+                !msg.includes('non-existing PPS') &&
+                !msg.includes('non-existing SPS') &&
+                !msg.includes('decode_slice_header') &&
+                !msg.includes('no frame!')
+              ) {
                 console.warn(`[ffmpeg-ts] ${msg}`);
               }
             });
 
-            const cleanup = () => {
-              try {
-                ffProc.kill('SIGKILL');
-              } catch {}
-              upstreamRes.destroy();
-              upstreamReq.destroy();
-            };
-
             req.on('close', cleanup);
             res.on('close', cleanup);
             ffProc.on('close', () => {
+              activeStreamSessions.delete(sessionId);
               if (!res.writableEnded) res.end();
             });
             return;
           }
 
-          req.on('close', () => {
-            upstreamRes.destroy();
-            upstreamReq.destroy();
-          });
+          if (isLikelyStream) {
+            const sessionId = nextSessionId++;
+            const cleanup = () => {
+              activeStreamSessions.delete(sessionId);
+              upstreamRes.destroy();
+              upstreamReq.destroy();
+            };
+            activeStreamSessions.set(sessionId, {
+              id: sessionId,
+              rawTarget,
+              isFfmpegOrLive: false,
+              cleanup,
+            });
+            req.on('close', cleanup);
+            res.on('close', cleanup);
+          } else {
+            req.on('close', () => {
+              upstreamRes.destroy();
+              upstreamReq.destroy();
+            });
+          }
 
           const isBinaryVideo =
             contentType.includes('video/') ||
