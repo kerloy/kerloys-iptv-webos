@@ -686,6 +686,7 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false,
+    cssTarget: 'chrome61',
     chunkSizeWarningLimit: 1500,
   },
   server: {

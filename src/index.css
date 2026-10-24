@@ -4,13 +4,13 @@
 
 @layer base {
   html {
-    /* 10-Foot LG webOS TV Base Scale: 21px at 1080p (1.31x desktop rem) so all text, icons, and buttons are large and legible from across the room */
-    font-size: 21px;
+    /* True 10-Foot LG webOS TV Base Scale: 26px at 1080p (1.625x desktop rem) so all text, icons, and buttons are large, bold, and legible from across the room */
+    font-size: 26px;
   }
 
   @media (min-width: 2500px) {
     html {
-      font-size: 38px;
+      font-size: 48px;
     }
   }
 
@@ -23,13 +23,35 @@
     -webkit-font-smoothing: antialiased;
     letter-spacing: 0.01em;
   }
+
+  /* Explicit Chromium 68 button/input reset (without :where()) so unselected buttons NEVER fall back to white browser-default buttonface */
+  button,
+  input[type='button'],
+  input[type='reset'],
+  input[type='submit'] {
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: #131c31;
+    background-image: none;
+    color: #e2e8f0;
+    border-color: transparent;
+  }
+
+  input,
+  select,
+  textarea {
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: #090e1a;
+    color: #f8fafc;
+  }
 }
 
 /* Upgrade any legacy micro text classes so nothing is ever tiny on a TV screen */
 .text-\[10px\],
 .text-\[11px\] {
-  font-size: 0.82rem !important;
-  line-height: 1.2rem !important;
+  font-size: 0.88rem !important;
+  line-height: 1.25rem !important;
 }
 
 /* High-visibility 10-foot TV Remote D-Pad / Magic Remote Focus Highlight */
@@ -37,21 +59,21 @@ button:focus-visible,
 button:focus,
 [tabindex="0"]:focus {
   outline: none !important;
-  box-shadow: 0 0 0 3px #38bdf8, 0 8px 24px -4px rgba(56, 189, 248, 0.45) !important;
+  box-shadow: 0 0 0 4px #38bdf8, 0 10px 28px -4px rgba(56, 189, 248, 0.55) !important;
 }
 
 /* Custom Sleek Scrollbar for TV Lists */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(15, 22, 38, 0.6);
+  background: rgba(15, 22, 38, 0.7);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.5);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(56, 189, 248, 0.8);
+  background: rgba(56, 189, 248, 0.85);
 }

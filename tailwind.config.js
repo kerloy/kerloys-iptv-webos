@@ -1,18 +1,26 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  corePlugins: {
+    backgroundOpacity: false,
+    textOpacity: false,
+    borderOpacity: false,
+    divideOpacity: false,
+    ringOpacity: false,
+    placeholderOpacity: false,
+  },
   theme: {
     extend: {
       fontSize: {
-        xs: ['0.85rem', { lineHeight: '1.25rem' }],
-        sm: ['0.96rem', { lineHeight: '1.4rem' }],
-        base: ['1.08rem', { lineHeight: '1.55rem' }],
-        lg: ['1.25rem', { lineHeight: '1.7rem' }],
-        xl: ['1.45rem', { lineHeight: '1.9rem' }],
-        '2xl': ['1.75rem', { lineHeight: '2.15rem' }],
-        '3xl': ['2.15rem', { lineHeight: '2.5rem' }],
-        '4xl': ['2.65rem', { lineHeight: '2.95rem' }],
-        '5xl': ['3.25rem', { lineHeight: '3.5rem' }],
+        xs: ['0.92rem', { lineHeight: '1.35rem' }],
+        sm: ['1.04rem', { lineHeight: '1.48rem' }],
+        base: ['1.18rem', { lineHeight: '1.65rem' }],
+        lg: ['1.35rem', { lineHeight: '1.85rem' }],
+        xl: ['1.58rem', { lineHeight: '2.05rem' }],
+        '2xl': ['1.9rem', { lineHeight: '2.3rem' }],
+        '3xl': ['2.35rem', { lineHeight: '2.7rem' }],
+        '4xl': ['2.9rem', { lineHeight: '3.2rem' }],
+        '5xl': ['3.5rem', { lineHeight: '3.8rem' }],
       },
       colors: {
         tv: {
