@@ -80,6 +80,9 @@ export const App: React.FC = () => {
     liveChannels[0] || null
   );
   const [clockText, setClockText] = useState<string>('');
+  const [hoveredCategoryTooltip, setHoveredCategoryTooltip] = useState<string | null>(
+    null
+  );
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
 
@@ -489,6 +492,12 @@ export const App: React.FC = () => {
 
       {/* Main Content Stage */}
       <main className="flex-1 flex flex-col p-6 overflow-hidden relative">
+        {hoveredCategoryTooltip && (
+          <div className="mb-3 px-4 py-2 rounded-xl bg-slate-900 border border-sky-400 text-white text-sm font-extrabold flex items-center justify-between shadow-lg shrink-0">
+            <span>Category: {hoveredCategoryTooltip}</span>
+            <span className="text-xs font-semibold text-sky-400">Press OK to filter</span>
+          </div>
+        )}
         {isLoadingPlaylist && (
           <div className="mb-4 px-4 py-2.5 rounded-xl bg-sky-500/15 border border-sky-400/40 text-sky-300 text-xs font-bold flex items-center justify-between shrink-0">
             <span>Syncing Xtream Codes Live TV, Movies & TV Series catalog...</span>
@@ -619,35 +628,36 @@ export const App: React.FC = () => {
                 </h2>
                 <button
                   onClick={() => setActiveTab('live')}
-                  className="text-xs font-bold text-sky-400 hover:underline"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-sky-400 hover:bg-slate-800"
                 >
                   Open Full Live TV Guide →
                 </button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                {liveChannels.slice(0, 8).map((ch) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {liveChannels.slice(0, 6).map((ch) => (
                   <button
                     key={ch.id}
                     onClick={() => handleLaunchChannel(ch)}
-                    className="p-3.5 rounded-2xl bg-[#0F1626] hover:bg-[#162038] border border-slate-800 hover:border-sky-400/70 text-left flex items-center space-x-3 transition-all focus:outline-none focus:ring-2 focus:ring-sky-400"
+                    title={`${ch.name} — ${ch.categoryName}`}
+                    className="p-4 rounded-2xl bg-[#0F1626] hover:bg-[#162038] border border-slate-800 hover:border-sky-400 text-left flex items-center space-x-3.5 transition-all focus:outline-none focus:ring-2 focus:ring-sky-400"
                   >
                     {ch.logo ? (
                       <img
                         src={ch.logo}
                         alt={ch.name}
                         loading="lazy"
-                        className="w-11 h-11 rounded-xl object-cover bg-slate-950 shrink-0"
+                        className="w-12 h-12 rounded-xl object-cover bg-slate-950 shrink-0"
                       />
                     ) : (
-                      <div className="w-11 h-11 rounded-xl bg-slate-800 flex items-center justify-center shrink-0">
-                        <Tv className="w-5 h-5 text-sky-400" />
+                      <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center shrink-0">
+                        <Tv className="w-6 h-6 text-sky-400" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold text-white text-sm truncate">
+                      <div className="font-bold text-white text-base truncate">
                         {ch.name}
                       </div>
-                      <div className="text-xs text-sky-300 truncate">
+                      <div className="text-xs text-sky-300 truncate mt-0.5">
                         {ch.currentProgram?.title || ch.categoryName}
                       </div>
                     </div>
@@ -656,7 +666,7 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Featured Movies Row (Capped at 10 items for instant rendering) */}
+            {/* Featured Movies Row (2 large posters per row) */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-amber-400 flex items-center space-x-2">
@@ -665,19 +675,20 @@ export const App: React.FC = () => {
                 </h2>
                 <button
                   onClick={() => setActiveTab('movies')}
-                  className="text-xs font-bold text-amber-400 hover:underline"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-amber-400 hover:bg-slate-800"
                 >
                   View All Movies & Categories →
                 </button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-                {movies.slice(0, 10).map((mv) => (
+              <div className="grid grid-cols-2 gap-6">
+                {movies.slice(0, 6).map((mv) => (
                   <button
                     key={mv.id}
                     onClick={() => handleOpenMovie(mv)}
-                    className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-amber-400 text-left transition-all focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    title={`${mv.name} (${mv.categoryName})`}
+                    className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-amber-400 text-left transition-all focus:outline-none focus:ring-2 focus:ring-amber-400 flex flex-row items-stretch"
                   >
-                    <div className="aspect-[2/3] bg-slate-900 relative overflow-hidden">
+                    <div className="w-36 sm:w-44 aspect-[2/3] bg-slate-900 relative overflow-hidden shrink-0">
                       {mv.poster ? (
                         <img
                           src={mv.poster}
@@ -691,18 +702,28 @@ export const App: React.FC = () => {
                         </div>
                       )}
                       {mv.rating ? (
-                        <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/80 text-amber-400 text-xs font-bold">
+                        <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/85 text-amber-400 text-xs font-bold">
                           ★ {mv.rating.toFixed(1)}
                         </span>
                       ) : null}
                     </div>
-                    <div className="p-3">
-                      <div className="font-bold text-sm text-white truncate">
-                        {mv.name}
+                    <div className="p-4 flex flex-col justify-between flex-1 min-w-0">
+                      <div className="space-y-1.5">
+                        <span className="inline-block px-2.5 py-0.5 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-bold break-words">
+                          {mv.categoryName}
+                        </span>
+                        <div className="font-extrabold text-base text-white line-clamp-2">
+                          {mv.name}
+                        </div>
+                        {mv.year && (
+                          <div className="text-xs text-slate-400 font-semibold">
+                            Release Year: {mv.year}
+                          </div>
+                        )}
                       </div>
-                      <div className="text-xs text-slate-400 mt-0.5 truncate">
-                        {mv.year ? `${mv.year} • ` : ''}
-                        {mv.categoryName}
+                      <div className="pt-2 flex items-center space-x-1.5 text-xs font-bold text-amber-400">
+                        <Play className="w-4 h-4 fill-amber-400" />
+                        <span>Open Movie & Play</span>
                       </div>
                     </div>
                   </button>
@@ -710,7 +731,7 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Featured TV Series Row (Capped at 10 items) */}
+            {/* Featured TV Series Row (2 large posters per row) */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-indigo-400 flex items-center space-x-2">
@@ -719,19 +740,20 @@ export const App: React.FC = () => {
                 </h2>
                 <button
                   onClick={() => setActiveTab('series')}
-                  className="text-xs font-bold text-indigo-400 hover:underline"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-indigo-400 hover:bg-slate-800"
                 >
                   View All Series & Categories →
                 </button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-                {series.slice(0, 10).map((sr) => (
+              <div className="grid grid-cols-2 gap-6">
+                {series.slice(0, 6).map((sr) => (
                   <button
                     key={sr.id}
                     onClick={() => handleOpenSeries(sr)}
-                    className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-indigo-400 text-left transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    title={`${sr.name} (${sr.categoryName})`}
+                    className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-indigo-400 text-left transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400 flex flex-row items-stretch"
                   >
-                    <div className="aspect-[2/3] bg-slate-900 relative overflow-hidden">
+                    <div className="w-36 sm:w-44 aspect-[2/3] bg-slate-900 relative overflow-hidden shrink-0">
                       {sr.poster ? (
                         <img
                           src={sr.poster}
@@ -748,12 +770,18 @@ export const App: React.FC = () => {
                         TV Series
                       </span>
                     </div>
-                    <div className="p-3">
-                      <div className="font-bold text-sm text-white truncate">
-                        {sr.name}
+                    <div className="p-4 flex flex-col justify-between flex-1 min-w-0">
+                      <div className="space-y-1.5">
+                        <span className="inline-block px-2.5 py-0.5 rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 text-xs font-bold break-words">
+                          {sr.categoryName}
+                        </span>
+                        <div className="font-extrabold text-base text-white line-clamp-2">
+                          {sr.name}
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-400 mt-0.5 truncate">
-                        {sr.categoryName}
+                      <div className="pt-2 flex items-center space-x-1.5 text-xs font-bold text-indigo-400">
+                        <Play className="w-4 h-4 fill-indigo-400" />
+                        <span>View Seasons & Episodes</span>
                       </div>
                     </div>
                   </button>
@@ -767,7 +795,7 @@ export const App: React.FC = () => {
         {activeTab === 'live' && (
           <div className="h-full grid grid-cols-12 gap-5 overflow-hidden">
             {/* Categories Sidebar */}
-            <div className="col-span-3 bg-[#0F1626] border border-slate-800 rounded-2xl p-3.5 flex flex-col overflow-hidden">
+            <div className="col-span-4 bg-[#0F1626] border border-slate-800 rounded-2xl p-3.5 flex flex-col overflow-hidden">
               <div className="pb-2.5 space-y-2 border-b border-slate-800">
                 <div className="text-xs font-bold uppercase text-sky-400 px-1">
                   Live Categories ({liveCategories.length})
@@ -790,6 +818,11 @@ export const App: React.FC = () => {
                     setSelectedLiveCat('all');
                     setLivePageLimit(100);
                   }}
+                  title={`All Channels (${liveChannels.length})`}
+                  onFocus={() => setHoveredCategoryTooltip(`All Channels (${liveChannels.length})`)}
+                  onMouseEnter={() => setHoveredCategoryTooltip(`All Channels (${liveChannels.length})`)}
+                  onBlur={() => setHoveredCategoryTooltip(null)}
+                  onMouseLeave={() => setHoveredCategoryTooltip(null)}
                   className={`w-full flex items-center justify-between text-left px-3.5 py-2.5 rounded-xl text-xs font-bold border ${
                     selectedLiveCat === 'all'
                       ? 'bg-sky-500 border-sky-300 text-slate-950'
@@ -804,6 +837,11 @@ export const App: React.FC = () => {
                   return (
                     <button
                       key={cat.id}
+                      title={`${cat.name} (${count} channels)`}
+                      onFocus={() => setHoveredCategoryTooltip(`${cat.name} (${count} channels)`)}
+                      onMouseEnter={() => setHoveredCategoryTooltip(`${cat.name} (${count} channels)`)}
+                      onBlur={() => setHoveredCategoryTooltip(null)}
+                      onMouseLeave={() => setHoveredCategoryTooltip(null)}
                       onClick={() => {
                         const selectCat = () => {
                           setSelectedLiveCat(cat.id);
@@ -821,7 +859,7 @@ export const App: React.FC = () => {
                           : 'bg-[#151F36] border-slate-800 text-slate-200 hover:bg-slate-800'
                       }`}
                     >
-                      <span className="truncate pr-2">{cat.name}</span>
+                      <span className="line-clamp-2 break-words pr-2">{cat.name}</span>
                       <div className="flex items-center space-x-1 shrink-0">
                         {cat.isAdult && <Lock className="w-3.5 h-3.5 text-amber-400" />}
                         <span className="text-[10px] opacity-85">{count}</span>
@@ -912,7 +950,7 @@ export const App: React.FC = () => {
             </div>
 
             {/* EPG & Channel Details Column */}
-            <div className="col-span-4 bg-[#0F1626] border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
+            <div className="col-span-3 bg-[#0F1626] border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
               {previewChannel ? (
                 <div className="space-y-4">
                   <div className="flex items-center space-x-3">
@@ -979,8 +1017,8 @@ export const App: React.FC = () => {
         {/* MOVIES (VOD) TAB — 2-COLUMN SIDEBAR + PAGINATED POSTER GRID */}
         {activeTab === 'movies' && (
           <div className="h-full grid grid-cols-12 gap-5 overflow-hidden">
-            {/* Left Movie Categories Sidebar */}
-            <div className="col-span-3 bg-[#0F1626] border border-slate-800 rounded-2xl p-3.5 flex flex-col overflow-hidden">
+            {/* Left Movie Categories Sidebar (Wider col-span-4 + full tooltip + 2-line wrap) */}
+            <div className="col-span-4 bg-[#0F1626] border border-slate-800 rounded-2xl p-3.5 flex flex-col overflow-hidden">
               <div className="pb-2.5 space-y-2 border-b border-slate-800">
                 <div className="text-xs font-bold uppercase text-amber-400 px-1">
                   Movie Categories ({movieCategories.length})
@@ -1003,6 +1041,11 @@ export const App: React.FC = () => {
                     setSelectedMovieCat('all');
                     setMoviePageLimit(PAGE_SIZE);
                   }}
+                  title={`All Movies (${movies.length})`}
+                  onFocus={() => setHoveredCategoryTooltip(`All Movies (${movies.length})`)}
+                  onMouseEnter={() => setHoveredCategoryTooltip(`All Movies (${movies.length})`)}
+                  onBlur={() => setHoveredCategoryTooltip(null)}
+                  onMouseLeave={() => setHoveredCategoryTooltip(null)}
                   className={`w-full flex items-center justify-between text-left px-3.5 py-2.5 rounded-xl text-xs font-bold border ${
                     selectedMovieCat === 'all'
                       ? 'bg-amber-500 border-amber-300 text-slate-950'
@@ -1018,6 +1061,11 @@ export const App: React.FC = () => {
                     setSelectedMovieCat('recent');
                     setMoviePageLimit(PAGE_SIZE);
                   }}
+                  title="Recently Added Movies"
+                  onFocus={() => setHoveredCategoryTooltip('Recently Added Movies')}
+                  onMouseEnter={() => setHoveredCategoryTooltip('Recently Added Movies')}
+                  onBlur={() => setHoveredCategoryTooltip(null)}
+                  onMouseLeave={() => setHoveredCategoryTooltip(null)}
                   className={`w-full flex items-center justify-between text-left px-3.5 py-2.5 rounded-xl text-xs font-bold border ${
                     selectedMovieCat === 'recent'
                       ? 'bg-amber-500 border-amber-300 text-slate-950'
@@ -1033,6 +1081,11 @@ export const App: React.FC = () => {
                     setSelectedMovieCat('top_rated');
                     setMoviePageLimit(PAGE_SIZE);
                   }}
+                  title="Top Rated Movies (7.5+)"
+                  onFocus={() => setHoveredCategoryTooltip('Top Rated Movies (7.5+)')}
+                  onMouseEnter={() => setHoveredCategoryTooltip('Top Rated Movies (7.5+)')}
+                  onBlur={() => setHoveredCategoryTooltip(null)}
+                  onMouseLeave={() => setHoveredCategoryTooltip(null)}
                   className={`w-full flex items-center justify-between text-left px-3.5 py-2.5 rounded-xl text-xs font-bold border ${
                     selectedMovieCat === 'top_rated'
                       ? 'bg-amber-500 border-amber-300 text-slate-950'
@@ -1050,6 +1103,11 @@ export const App: React.FC = () => {
                   return (
                     <button
                       key={cat.id}
+                      title={`${cat.name} (${count} movies)`}
+                      onFocus={() => setHoveredCategoryTooltip(`${cat.name} (${count} movies)`)}
+                      onMouseEnter={() => setHoveredCategoryTooltip(`${cat.name} (${count} movies)`)}
+                      onBlur={() => setHoveredCategoryTooltip(null)}
+                      onMouseLeave={() => setHoveredCategoryTooltip(null)}
                       onClick={() => {
                         const selectCat = () => {
                           setSelectedMovieCat(cat.id);
@@ -1067,7 +1125,7 @@ export const App: React.FC = () => {
                           : 'bg-[#151F36] border-slate-800 text-slate-200 hover:bg-slate-800'
                       }`}
                     >
-                      <span className="truncate pr-2">{cat.name}</span>
+                      <span className="line-clamp-2 break-words pr-2">{cat.name}</span>
                       <div className="flex items-center space-x-1 shrink-0">
                         {cat.isAdult && <Lock className="w-3.5 h-3.5 text-amber-300" />}
                         <span className="text-[10px] opacity-85">{count}</span>
@@ -1078,8 +1136,8 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Movie Poster Grid */}
-            <div className="col-span-9 flex flex-col overflow-hidden space-y-4">
+            {/* Right Movie Poster Grid (2 large posters per row) */}
+            <div className="col-span-8 flex flex-col overflow-hidden space-y-4">
               {/* Top Filter & Sort Bar */}
               <div className="bg-[#0F1626] border border-slate-800 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1132,16 +1190,17 @@ export const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Scrollable Poster Grid */}
+              {/* Scrollable Poster Grid (2 large items per row) */}
               <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                <div className="grid grid-cols-2 gap-5">
                   {filteredMovies.slice(0, moviePageLimit).map((mv) => (
                     <button
                       key={mv.id}
                       onClick={() => handleOpenMovie(mv)}
-                      className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-amber-400 text-left flex flex-col focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      title={`${mv.name} (${mv.categoryName})`}
+                      className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-amber-400 text-left flex flex-row items-stretch focus:outline-none focus:ring-2 focus:ring-amber-400"
                     >
-                      <div className="aspect-[2/3] bg-slate-900 relative overflow-hidden">
+                      <div className="w-36 sm:w-44 aspect-[2/3] bg-slate-900 relative overflow-hidden shrink-0">
                         {mv.poster ? (
                           <img
                             src={mv.poster}
@@ -1155,22 +1214,32 @@ export const App: React.FC = () => {
                           </div>
                         )}
                         {mv.rating ? (
-                          <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/80 text-amber-400 text-xs font-bold flex items-center space-x-1">
+                          <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/85 text-amber-400 text-xs font-bold flex items-center space-x-1">
                             <Star className="w-3 h-3 fill-amber-400" />
                             <span>{mv.rating.toFixed(1)}</span>
                           </span>
                         ) : null}
-                        <span className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/80 text-slate-200 text-[10px] font-bold uppercase">
+                        <span className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/85 text-slate-200 text-[10px] font-bold uppercase">
                           {mv.containerExtension}
                         </span>
                       </div>
-                      <div className="p-3">
-                        <div className="font-bold text-sm text-white truncate">
-                          {mv.name}
+                      <div className="p-4 flex flex-col justify-between flex-1 min-w-0">
+                        <div className="space-y-1.5">
+                          <span className="inline-block px-2.5 py-0.5 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-bold break-words">
+                            {mv.categoryName}
+                          </span>
+                          <div className="font-extrabold text-base text-white line-clamp-2">
+                            {mv.name}
+                          </div>
+                          {mv.year && (
+                            <div className="text-xs text-slate-400 font-semibold">
+                              Year: {mv.year}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-xs text-slate-400 mt-1 truncate">
-                          {mv.year ? `${mv.year} • ` : ''}
-                          {mv.categoryName}
+                        <div className="pt-2 flex items-center space-x-1.5 text-xs font-bold text-amber-400">
+                          <Play className="w-4 h-4 fill-amber-400" />
+                          <span>Open Details & Play</span>
                         </div>
                       </div>
                     </button>
@@ -1198,8 +1267,8 @@ export const App: React.FC = () => {
         {/* TV SERIES TAB — 2-COLUMN SIDEBAR + PAGINATED POSTER GRID */}
         {activeTab === 'series' && (
           <div className="h-full grid grid-cols-12 gap-5 overflow-hidden">
-            {/* Left Series Categories Sidebar */}
-            <div className="col-span-3 bg-[#0F1626] border border-slate-800 rounded-2xl p-3.5 flex flex-col overflow-hidden">
+            {/* Left Series Categories Sidebar (Wider col-span-4 + full tooltip + 2-line wrap) */}
+            <div className="col-span-4 bg-[#0F1626] border border-slate-800 rounded-2xl p-3.5 flex flex-col overflow-hidden">
               <div className="pb-2.5 space-y-2 border-b border-slate-800">
                 <div className="text-xs font-bold uppercase text-indigo-400 px-1">
                   Series Categories ({seriesCategories.length})
@@ -1222,6 +1291,11 @@ export const App: React.FC = () => {
                     setSelectedSeriesCat('all');
                     setSeriesPageLimit(PAGE_SIZE);
                   }}
+                  title={`All TV Series (${series.length})`}
+                  onFocus={() => setHoveredCategoryTooltip(`All TV Series (${series.length})`)}
+                  onMouseEnter={() => setHoveredCategoryTooltip(`All TV Series (${series.length})`)}
+                  onBlur={() => setHoveredCategoryTooltip(null)}
+                  onMouseLeave={() => setHoveredCategoryTooltip(null)}
                   className={`w-full flex items-center justify-between text-left px-3.5 py-2.5 rounded-xl text-xs font-bold border ${
                     selectedSeriesCat === 'all'
                       ? 'bg-indigo-500 border-indigo-300 text-white'
@@ -1237,6 +1311,11 @@ export const App: React.FC = () => {
                     setSelectedSeriesCat('top_rated');
                     setSeriesPageLimit(PAGE_SIZE);
                   }}
+                  title="Top Rated TV Series (7.5+)"
+                  onFocus={() => setHoveredCategoryTooltip('Top Rated TV Series (7.5+)')}
+                  onMouseEnter={() => setHoveredCategoryTooltip('Top Rated TV Series (7.5+)')}
+                  onBlur={() => setHoveredCategoryTooltip(null)}
+                  onMouseLeave={() => setHoveredCategoryTooltip(null)}
                   className={`w-full flex items-center justify-between text-left px-3.5 py-2.5 rounded-xl text-xs font-bold border ${
                     selectedSeriesCat === 'top_rated'
                       ? 'bg-indigo-500 border-indigo-300 text-white'
@@ -1254,6 +1333,11 @@ export const App: React.FC = () => {
                   return (
                     <button
                       key={cat.id}
+                      title={`${cat.name} (${count} series)`}
+                      onFocus={() => setHoveredCategoryTooltip(`${cat.name} (${count} series)`)}
+                      onMouseEnter={() => setHoveredCategoryTooltip(`${cat.name} (${count} series)`)}
+                      onBlur={() => setHoveredCategoryTooltip(null)}
+                      onMouseLeave={() => setHoveredCategoryTooltip(null)}
                       onClick={() => {
                         const selectCat = () => {
                           setSelectedSeriesCat(cat.id);
@@ -1271,7 +1355,7 @@ export const App: React.FC = () => {
                           : 'bg-[#151F36] border-slate-800 text-slate-200 hover:bg-slate-800'
                       }`}
                     >
-                      <span className="truncate pr-2">{cat.name}</span>
+                      <span className="line-clamp-2 break-words pr-2">{cat.name}</span>
                       <div className="flex items-center space-x-1 shrink-0">
                         {cat.isAdult && <Lock className="w-3.5 h-3.5 text-amber-300" />}
                         <span className="text-[10px] opacity-85">{count}</span>
@@ -1282,8 +1366,8 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Right Series Poster Grid */}
-            <div className="col-span-9 flex flex-col overflow-hidden space-y-4">
+            {/* Right Series Poster Grid (2 large posters per row) */}
+            <div className="col-span-8 flex flex-col overflow-hidden space-y-4">
               {/* Top Filter & Sort Bar */}
               <div className="bg-[#0F1626] border border-slate-800 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1335,16 +1419,17 @@ export const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Scrollable Series Grid */}
+              {/* Scrollable Series Grid (2 large items per row) */}
               <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                <div className="grid grid-cols-2 gap-5">
                   {filteredSeries.slice(0, seriesPageLimit).map((sr) => (
                     <button
                       key={sr.id}
                       onClick={() => handleOpenSeries(sr)}
-                      className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-indigo-400 text-left flex flex-col focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      title={`${sr.name} (${sr.categoryName})`}
+                      className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-indigo-400 text-left flex flex-row items-stretch focus:outline-none focus:ring-2 focus:ring-indigo-400"
                     >
-                      <div className="aspect-[2/3] bg-slate-900 relative overflow-hidden">
+                      <div className="w-36 sm:w-44 aspect-[2/3] bg-slate-900 relative overflow-hidden shrink-0">
                         {sr.poster ? (
                           <img
                             src={sr.poster}
@@ -1358,7 +1443,7 @@ export const App: React.FC = () => {
                           </div>
                         )}
                         {sr.rating ? (
-                          <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/80 text-amber-400 text-xs font-bold flex items-center space-x-1">
+                          <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/85 text-amber-400 text-xs font-bold flex items-center space-x-1">
                             <Star className="w-3 h-3 fill-amber-400" />
                             <span>{sr.rating.toFixed(1)}</span>
                           </span>
@@ -1367,12 +1452,18 @@ export const App: React.FC = () => {
                           Series
                         </span>
                       </div>
-                      <div className="p-3">
-                        <div className="font-bold text-sm text-white truncate">
-                          {sr.name}
+                      <div className="p-4 flex flex-col justify-between flex-1 min-w-0">
+                        <div className="space-y-1.5">
+                          <span className="inline-block px-2.5 py-0.5 rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 text-xs font-bold break-words">
+                            {sr.categoryName}
+                          </span>
+                          <div className="font-extrabold text-base text-white line-clamp-2">
+                            {sr.name}
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-400 mt-1 truncate">
-                          {sr.categoryName}
+                        <div className="pt-2 flex items-center space-x-1.5 text-xs font-bold text-indigo-400">
+                          <Play className="w-4 h-4 fill-indigo-400" />
+                          <span>View Seasons & Episodes</span>
                         </div>
                       </div>
                     </button>

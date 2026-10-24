@@ -284,14 +284,15 @@ export const GlobalSearchView: React.FC = () => {
               <Film className="w-4 h-4" />
               <span>Movies / VOD ({results.movies.length})</span>
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 gap-5">
               {results.movies.map((mv) => (
                 <button
                   key={mv.id}
                   onClick={() => handleOpenMovie(mv)}
-                  className="group bg-[#0F1626] rounded-xl overflow-hidden border border-slate-800 hover:border-amber-400/70 text-left transition-all focus:outline-none focus:ring-2 focus:ring-amber-400 flex flex-col"
+                  title={`${mv.name} (${mv.categoryName})`}
+                  className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-amber-400 text-left transition-all focus:outline-none focus:ring-2 focus:ring-amber-400 flex flex-row items-stretch"
                 >
-                  <div className="aspect-[2/3] bg-slate-900 relative overflow-hidden">
+                  <div className="w-36 sm:w-44 aspect-[2/3] bg-slate-900 relative overflow-hidden shrink-0">
                     {mv.poster ? (
                       <img
                         src={mv.poster}
@@ -304,17 +305,28 @@ export const GlobalSearchView: React.FC = () => {
                       </div>
                     )}
                     {mv.rating && (
-                      <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/80 text-amber-400 text-xs font-bold">
+                      <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/85 text-amber-400 text-xs font-bold">
                         ★ {mv.rating.toFixed(1)}
                       </span>
                     )}
                   </div>
-                  <div className="p-3">
-                    <div className="font-bold text-sm text-white truncate">
-                      {mv.name}
+                  <div className="p-4 flex flex-col justify-between flex-1 min-w-0">
+                    <div className="space-y-1.5">
+                      <span className="inline-block px-2.5 py-0.5 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-bold break-words">
+                        {mv.categoryName}
+                      </span>
+                      <div className="font-extrabold text-base text-white line-clamp-2">
+                        {mv.name}
+                      </div>
+                      {mv.year && (
+                        <div className="text-xs text-slate-400 font-semibold">
+                          Year: {mv.year}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      {mv.year || mv.categoryName}
+                    <div className="pt-2 flex items-center space-x-1.5 text-xs font-bold text-amber-400">
+                      <Play className="w-4 h-4 fill-amber-400" />
+                      <span>Open Movie & Play</span>
                     </div>
                   </div>
                 </button>
@@ -330,14 +342,15 @@ export const GlobalSearchView: React.FC = () => {
               <Clapperboard className="w-4 h-4" />
               <span>TV Series ({results.series.length})</span>
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 gap-5">
               {results.series.map((sr) => (
                 <button
                   key={sr.id}
                   onClick={() => handleOpenSeries(sr)}
-                  className="group bg-[#0F1626] rounded-xl overflow-hidden border border-slate-800 hover:border-indigo-400/70 text-left transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400 flex flex-col"
+                  title={`${sr.name} (${sr.categoryName})`}
+                  className="group bg-[#0F1626] rounded-2xl overflow-hidden border border-slate-800 hover:border-indigo-400 text-left transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400 flex flex-row items-stretch"
                 >
-                  <div className="aspect-[2/3] bg-slate-900 relative overflow-hidden">
+                  <div className="w-36 sm:w-44 aspect-[2/3] bg-slate-900 relative overflow-hidden shrink-0">
                     {sr.poster ? (
                       <img
                         src={sr.poster}
@@ -353,12 +366,18 @@ export const GlobalSearchView: React.FC = () => {
                       {sr.seasons.length} Seasons
                     </span>
                   </div>
-                  <div className="p-3">
-                    <div className="font-bold text-sm text-white truncate">
-                      {sr.name}
+                  <div className="p-4 flex flex-col justify-between flex-1 min-w-0">
+                    <div className="space-y-1.5">
+                      <span className="inline-block px-2.5 py-0.5 rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 text-xs font-bold break-words">
+                        {sr.categoryName}
+                      </span>
+                      <div className="font-extrabold text-base text-white line-clamp-2">
+                        {sr.name}
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      {sr.categoryName}
+                    <div className="pt-2 flex items-center space-x-1.5 text-xs font-bold text-indigo-400">
+                      <Play className="w-4 h-4 fill-indigo-400" />
+                      <span>View Seasons & Episodes</span>
                     </div>
                   </div>
                 </button>
