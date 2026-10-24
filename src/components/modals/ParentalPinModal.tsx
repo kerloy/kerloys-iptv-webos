@@ -40,7 +40,7 @@ export const ParentalPinModal: React.FC = () => {
         </div>
 
         <p className="text-xs text-slate-400">
-          Enter your 4-digit PIN to unlock restricted content (Default PIN: <strong>0000</strong>)
+          Enter your 4-digit PIN to unlock restricted content
         </p>
 
         {/* PIN Dots */}

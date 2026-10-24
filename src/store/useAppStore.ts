@@ -61,7 +61,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   playerEngine: 'auto',
   liveStreamFormat: 'ts',
   aspectRatio: 'fit',
-  parentalPin: '0000',
+  parentalPin: '1508',
   parentalEnabled: true,
   unlockedSession: false,
   showAdultInMainMenus: false,
@@ -203,11 +203,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     STORAGE_KEYS.WATCH_HISTORY,
     {}
   ),
-  settings: {
-    ...DEFAULT_SETTINGS,
-    ...loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {}),
-    unlockedSession: false,
-  },
+  settings: (() => {
+    const loaded = loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {});
+    return {
+      ...DEFAULT_SETTINGS,
+      ...loaded,
+      parentalPin:
+        !loaded.parentalPin || loaded.parentalPin === '0000'
+          ? '1508'
+          : loaded.parentalPin,
+      unlockedSession: false,
+    };
+  })(),
 
   activeMedia: null,
   selectedMovie: null,

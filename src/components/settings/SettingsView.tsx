@@ -110,7 +110,7 @@ export const SettingsView: React.FC = () => {
                 Parental Controls & "For Adults" (18+) Categories
               </h2>
               <p className="text-xs text-slate-400">
-                All Adult / 18+ categories are kept safely inside this section behind your 4-digit PIN (Default PIN: 0000)
+                All Adult / 18+ categories are kept safely inside this section behind your 4-digit PIN
               </p>
             </div>
           </div>
@@ -155,12 +155,12 @@ export const SettingsView: React.FC = () => {
                   Change 4-Digit Parental PIN
                 </label>
                 <input
-                  type="text"
+                  type="password"
                   maxLength={4}
                   value={settings.parentalPin}
                   onChange={(e) => {
                     const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
-                    updateSettings({ parentalPin: digits || '0000' });
+                    updateSettings({ parentalPin: digits || '1508' });
                     triggerSaved();
                   }}
                   className="w-full px-4 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-center font-mono text-base tracking-widest"
